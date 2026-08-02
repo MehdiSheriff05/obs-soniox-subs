@@ -1,0 +1,376 @@
+/*
+Plugin Name
+Copyright (C) 2026 Mehdi Sheriff mehdirsheriff@gmail.com
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along
+with this program. If not, see <https://www.gnu.org/licenses/>
+*/
+
+#include "CaptionsDock.h"
+
+#include <obs-frontend-api.h>
+#include <obs-module.h>
+#include <plugin-support.h>
+#include <util/config-file.h>
+
+#include <QComboBox>
+#include <QFormLayout>
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QLineEdit>
+#include <QPlainTextEdit>
+#include <QProgressBar>
+#include <QPushButton>
+#include <QTextBlock>
+#include <QTextCursor>
+#include <QTimer>
+#include <QVBoxLayout>
+
+#include <algorithm>
+
+namespace {
+
+#if defined(_WIN32)
+const char *kCaptionSourceId = "text_gdiplus";
+#else
+const char *kCaptionSourceId = "text_ft2_source";
+#endif
+
+const int kMaxPreviewLines = 10;
+const int kLineCommitChars = 100;
+const qint64 kNoAudioWarningMs = 3000;
+
+bool enumAudioSourceCallback(void *param, obs_source_t *source)
+{
+	auto *combo = static_cast<QComboBox *>(param);
+
+	uint32_t flags = obs_source_get_output_flags(source);
+	if (!(flags & OBS_SOURCE_AUDIO))
+		return true;
+
+	const char *name = obs_source_get_name(source);
+	if (name && *name)
+		combo->addItem(QString::fromUtf8(name));
+
+	return true;
+}
+
+} // namespace
+
+CaptionsDock::CaptionsDock(QWidget *parent) : QWidget(parent)
+{
+	buildUi();
+	refreshSourceList();
+	loadSettings();
+
+	connect(&m_audioBridge, &AudioBridge::levelChanged, this, &CaptionsDock::onLevelChanged);
+	connect(&m_sonioxClient, &SonioxClient::captionReady, this, &CaptionsDock::onCaptionReady);
+	connect(&m_sonioxClient, &SonioxClient::statusChanged, this, &CaptionsDock::onSonioxStatusChanged);
+	connect(&m_sonioxClient, &SonioxClient::errorOccurred, this, &CaptionsDock::onSonioxError);
+
+	m_audioBridge.setAudioReadyCallback(
+		[this](const uint8_t *data, size_t byteCount) { m_sonioxClient.sendAudio(data, byteCount); });
+
+	m_watchdogTimer = new QTimer(this);
+	m_watchdogTimer->setInterval(1000);
+	connect(m_watchdogTimer, &QTimer::timeout, this, &CaptionsDock::onWatchdogTick);
+
+	setStatusText(tr("Idle"));
+}
+
+CaptionsDock::~CaptionsDock()
+{
+	saveSettings();
+
+	m_sonioxClient.stop();
+	m_audioBridge.stop();
+	clearCaptionText();
+
+	if (m_captionTextSource) {
+		obs_source_release(m_captionTextSource);
+		m_captionTextSource = nullptr;
+	}
+}
+
+void CaptionsDock::buildUi()
+{
+	auto *layout = new QVBoxLayout(this);
+
+	auto *form = new QFormLayout();
+	m_sourceCombo = new QComboBox(this);
+	form->addRow(tr("Audio Source:"), m_sourceCombo);
+
+	m_apiKeyEdit = new QLineEdit(this);
+	m_apiKeyEdit->setEchoMode(QLineEdit::Password);
+	m_apiKeyEdit->setPlaceholderText(tr("Soniox API key"));
+	form->addRow(tr("API Key:"), m_apiKeyEdit);
+
+	layout->addLayout(form);
+
+	m_startStopButton = new QPushButton(tr("Start"), this);
+	connect(m_startStopButton, &QPushButton::clicked, this, &CaptionsDock::onStartStopClicked);
+	layout->addWidget(m_startStopButton);
+
+	m_statusLabel = new QLabel(this);
+	m_statusLabel->setWordWrap(true);
+	layout->addWidget(m_statusLabel);
+
+	auto *levelRow = new QHBoxLayout();
+	levelRow->addWidget(new QLabel(tr("Audio level:"), this));
+	m_levelMeter = new QProgressBar(this);
+	m_levelMeter->setRange(0, 100);
+	m_levelMeter->setValue(0);
+	m_levelMeter->setTextVisible(false);
+	levelRow->addWidget(m_levelMeter);
+	layout->addLayout(levelRow);
+
+	layout->addWidget(new QLabel(tr("Live captions:"), this));
+	m_captionPreview = new QPlainTextEdit(this);
+	m_captionPreview->setReadOnly(true);
+	m_captionPreview->setMaximumBlockCount(kMaxPreviewLines);
+	m_captionPreview->setMinimumHeight(140);
+	layout->addWidget(m_captionPreview);
+
+	setLayout(layout);
+}
+
+void CaptionsDock::refreshSourceList()
+{
+	QString previous = m_sourceCombo->currentText();
+
+	m_sourceCombo->clear();
+	obs_enum_sources(enumAudioSourceCallback, m_sourceCombo);
+
+	int idx = m_sourceCombo->findText(previous);
+	if (idx >= 0)
+		m_sourceCombo->setCurrentIndex(idx);
+}
+
+void CaptionsDock::loadSettings()
+{
+	config_t *config = obs_frontend_get_user_config();
+	if (!config)
+		return;
+
+	const char *apiKey = config_get_string(config, "SonioxCaptions", "ApiKey");
+	if (apiKey)
+		m_apiKeyEdit->setText(QString::fromUtf8(apiKey));
+
+	const char *sourceName = config_get_string(config, "SonioxCaptions", "AudioSource");
+	if (sourceName) {
+		int idx = m_sourceCombo->findText(QString::fromUtf8(sourceName));
+		if (idx >= 0)
+			m_sourceCombo->setCurrentIndex(idx);
+	}
+}
+
+void CaptionsDock::saveSettings()
+{
+	config_t *config = obs_frontend_get_user_config();
+	if (!config)
+		return;
+
+	config_set_string(config, "SonioxCaptions", "ApiKey", m_apiKeyEdit->text().toUtf8().constData());
+	config_set_string(config, "SonioxCaptions", "AudioSource",
+			   m_sourceCombo->currentText().toUtf8().constData());
+	config_save(config);
+}
+
+void CaptionsDock::onStartStopClicked()
+{
+	if (m_running) {
+		m_sonioxClient.stop();
+		m_audioBridge.stop();
+		m_watchdogTimer->stop();
+		clearCaptionText();
+		setRunningUiState(false);
+		setStatusText(tr("Idle"));
+		return;
+	}
+
+	QString sourceName = m_sourceCombo->currentText();
+	QString apiKey = m_apiKeyEdit->text();
+
+	if (sourceName.isEmpty()) {
+		setStatusText(tr("Pick an audio source first"));
+		return;
+	}
+	if (apiKey.isEmpty()) {
+		setStatusText(tr("Enter a Soniox API key first"));
+		return;
+	}
+
+	saveSettings();
+
+	if (!m_audioBridge.start(sourceName)) {
+		setStatusText(tr("Could not use that audio source"),
+			      QStringLiteral("obs_get_source_by_name(\"%1\") returned null").arg(sourceName));
+		return;
+	}
+
+	ensureCaptionTextSource();
+
+	m_lastFinalizedText.clear();
+	m_captionPreview->clear();
+
+	m_sonioxClient.setApiKey(apiKey);
+	m_sonioxClient.setLanguages(QStringLiteral("ur"), QStringLiteral("en"));
+	m_sonioxClient.start();
+
+	m_noAudioWarned = false;
+	m_watchdogTimer->start();
+	setRunningUiState(true);
+	setStatusText(tr("Connecting..."));
+}
+
+void CaptionsDock::setRunningUiState(bool running)
+{
+	m_running = running;
+	m_startStopButton->setText(running ? tr("Stop") : tr("Start"));
+	m_sourceCombo->setEnabled(!running);
+	m_apiKeyEdit->setEnabled(!running);
+}
+
+void CaptionsDock::setStatusText(const QString &plain, const QString &tooltip)
+{
+	m_statusLabel->setText(plain);
+	m_statusLabel->setToolTip(tooltip.isEmpty() ? plain : tooltip);
+}
+
+void CaptionsDock::onLevelChanged(float peakLevel)
+{
+	int percent = static_cast<int>(std::min(1.0f, peakLevel) * 100.0f);
+	m_levelMeter->setValue(percent);
+}
+
+void CaptionsDock::onCaptionReady(const QString &text, bool isFinal)
+{
+	if (isFinal)
+		m_lastFinalizedText += text;
+
+	QString display = isFinal ? m_lastFinalizedText : m_lastFinalizedText + text;
+
+	updateCaptionTextSource(display);
+	updatePreviewCurrentLine(display);
+
+	if (isFinal && m_lastFinalizedText.length() >= kLineCommitChars) {
+		m_lastFinalizedText.clear();
+		m_captionPreview->appendPlainText(QString());
+	}
+}
+
+void CaptionsDock::updatePreviewCurrentLine(const QString &text)
+{
+	QTextCursor cursor(m_captionPreview->document()->lastBlock());
+	cursor.select(QTextCursor::LineUnderCursor);
+	cursor.insertText(text);
+}
+
+void CaptionsDock::onSonioxStatusChanged(SonioxClient::Status status)
+{
+	switch (status) {
+	case SonioxClient::Status::Connecting:
+		setStatusText(tr("Connecting..."));
+		break;
+	case SonioxClient::Status::Connected:
+		setStatusText(tr("Live — captions are being translated"));
+		break;
+	case SonioxClient::Status::Reconnecting:
+		setStatusText(tr("Connection lost, retrying..."));
+		break;
+	case SonioxClient::Status::AuthError:
+		setStatusText(tr("Invalid API key"), tr("Authentication failed. Check the Soniox API key."));
+		m_watchdogTimer->stop();
+		m_audioBridge.stop();
+		setRunningUiState(false);
+		break;
+	case SonioxClient::Status::Disconnected:
+		if (m_running) {
+			m_watchdogTimer->stop();
+			m_audioBridge.stop();
+			setRunningUiState(false);
+			setStatusText(tr("Idle"));
+		}
+		break;
+	}
+}
+
+void CaptionsDock::onSonioxError(const QString &plainMessage, const QString &technicalDetail)
+{
+	setStatusText(plainMessage, technicalDetail);
+	obs_log(LOG_WARNING, "Soniox error: %s", technicalDetail.toUtf8().constData());
+}
+
+void CaptionsDock::onWatchdogTick()
+{
+	if (!m_running)
+		return;
+
+	if (m_audioBridge.msSinceLastAudio() > kNoAudioWarningMs) {
+		if (!m_noAudioWarned) {
+			m_noAudioWarned = true;
+			setStatusText(tr("No audio detected from selected source"),
+				      tr("No audio_capture_callback invocations received recently"));
+		}
+	} else {
+		m_noAudioWarned = false;
+	}
+}
+
+void CaptionsDock::ensureCaptionTextSource()
+{
+	if (m_captionTextSource)
+		return;
+
+	obs_source_t *existing = obs_get_source_by_name(kCaptionSourceName);
+	if (existing) {
+		m_captionTextSource = existing;
+	} else {
+		obs_data_t *settings = obs_data_create();
+		obs_data_set_string(settings, "text", "");
+		m_captionTextSource = obs_source_create(kCaptionSourceId, kCaptionSourceName, settings, nullptr);
+		obs_data_release(settings);
+	}
+
+	if (!m_captionTextSource)
+		return;
+
+	obs_source_t *sceneSource = obs_frontend_get_current_scene();
+	if (!sceneSource)
+		return;
+
+	obs_scene_t *scene = obs_scene_from_source(sceneSource);
+	if (scene && !obs_scene_find_source(scene, kCaptionSourceName))
+		obs_scene_add(scene, m_captionTextSource);
+
+	obs_source_release(sceneSource);
+}
+
+void CaptionsDock::updateCaptionTextSource(const QString &text)
+{
+	if (!m_captionTextSource)
+		return;
+
+	obs_data_t *settings = obs_data_create();
+	obs_data_set_string(settings, "text", text.toUtf8().constData());
+	obs_source_update(m_captionTextSource, settings);
+	obs_data_release(settings);
+}
+
+void CaptionsDock::clearCaptionText()
+{
+	if (!m_captionTextSource)
+		return;
+
+	updateCaptionTextSource("");
+}
