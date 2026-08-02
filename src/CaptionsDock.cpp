@@ -113,7 +113,15 @@ void CaptionsDock::buildUi()
 	m_apiKeyEdit = new QLineEdit(this);
 	m_apiKeyEdit->setEchoMode(QLineEdit::Password);
 	m_apiKeyEdit->setPlaceholderText(tr("Soniox API key"));
-	form->addRow(tr("API Key:"), m_apiKeyEdit);
+
+	m_apiKeyChangeButton = new QPushButton(tr("Change"), this);
+	m_apiKeyChangeButton->setVisible(false);
+	connect(m_apiKeyChangeButton, &QPushButton::clicked, this, &CaptionsDock::onApiKeyChangeClicked);
+
+	auto *apiKeyRow = new QHBoxLayout();
+	apiKeyRow->addWidget(m_apiKeyEdit);
+	apiKeyRow->addWidget(m_apiKeyChangeButton);
+	form->addRow(tr("API Key:"), apiKeyRow);
 
 	layout->addLayout(form);
 
@@ -164,7 +172,8 @@ void CaptionsDock::loadSettings()
 
 	const char *apiKey = config_get_string(config, "SonioxCaptions", "ApiKey");
 	if (apiKey)
-		m_apiKeyEdit->setText(QString::fromUtf8(apiKey));
+		m_savedApiKey = QString::fromUtf8(apiKey);
+	setApiKeyLocked(!m_savedApiKey.isEmpty());
 
 	const char *sourceName = config_get_string(config, "SonioxCaptions", "AudioSource");
 	if (sourceName) {
@@ -211,6 +220,8 @@ void CaptionsDock::onStartStopClicked()
 	}
 
 	saveSettings();
+	m_savedApiKey = apiKey;
+	setApiKeyLocked(true);
 
 	if (!m_audioBridge.start(sourceName)) {
 		setStatusText(tr("Could not use that audio source"),
@@ -239,6 +250,29 @@ void CaptionsDock::setRunningUiState(bool running)
 	m_startStopButton->setText(running ? tr("Stop") : tr("Start"));
 	m_sourceCombo->setEnabled(!running);
 	m_apiKeyEdit->setEnabled(!running);
+	m_apiKeyChangeButton->setEnabled(!running);
+}
+
+void CaptionsDock::setApiKeyLocked(bool locked)
+{
+	m_apiKeyLocked = locked;
+	m_apiKeyEdit->setReadOnly(locked);
+	m_apiKeyChangeButton->setVisible(!m_savedApiKey.isEmpty());
+	m_apiKeyChangeButton->setText(locked ? tr("Change") : tr("Cancel"));
+
+	if (locked)
+		m_apiKeyEdit->setText(m_savedApiKey);
+}
+
+void CaptionsDock::onApiKeyChangeClicked()
+{
+	if (m_apiKeyLocked) {
+		setApiKeyLocked(false);
+		m_apiKeyEdit->clear();
+		m_apiKeyEdit->setFocus();
+	} else {
+		setApiKeyLocked(true);
+	}
 }
 
 void CaptionsDock::setStatusText(const QString &plain, const QString &tooltip)

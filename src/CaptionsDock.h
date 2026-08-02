@@ -42,6 +42,7 @@ public:
 
 private slots:
 	void onStartStopClicked();
+	void onApiKeyChangeClicked();
 	void onLevelChanged(float peakLevel);
 	void onCaptionReady(const QString &text, bool isFinal);
 	void onSonioxStatusChanged(SonioxClient::Status status);
@@ -54,6 +55,7 @@ private:
 	void loadSettings();
 	void saveSettings();
 	void setRunningUiState(bool running);
+	void setApiKeyLocked(bool locked);
 	void setStatusText(const QString &plain, const QString &tooltip = QString());
 	void ensureCaptionTextSource();
 	void updateCaptionTextSource(const QString &text);
@@ -62,6 +64,7 @@ private:
 
 	QComboBox *m_sourceCombo = nullptr;
 	QLineEdit *m_apiKeyEdit = nullptr;
+	QPushButton *m_apiKeyChangeButton = nullptr;
 	QPushButton *m_startStopButton = nullptr;
 	QLabel *m_statusLabel = nullptr;
 	QPlainTextEdit *m_captionPreview = nullptr;
@@ -73,8 +76,10 @@ private:
 
 	obs_source_t *m_captionTextSource = nullptr;
 	QString m_lastFinalizedText;
+	QString m_savedApiKey;
 	bool m_running = false;
 	bool m_noAudioWarned = false;
+	bool m_apiKeyLocked = false;
 
 	static constexpr const char *kCaptionSourceName = "Soniox Live Captions";
 };
