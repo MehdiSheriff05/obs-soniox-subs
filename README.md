@@ -30,7 +30,38 @@ needs manual end-to-end verification.
   plugin doesn't surface remaining account balance, only per-connection
   errors from the API itself.
 
-## Build
+## Installation
+
+These are end-user steps for someone who already has a built plugin (either
+downloaded from a Release, or built themselves per the **Build** section
+below) — not a development setup.
+
+### macOS
+
+1. Copy `obs-soniox-subs.plugin` into
+   `~/Library/Application Support/obs-studio/plugins/`.
+2. If it was downloaded rather than built locally, macOS Gatekeeper will
+   likely quarantine it. Either right-click the `.plugin` bundle > **Open**
+   once, or clear the quarantine flag from Terminal:
+   ```
+   xattr -dr com.apple.quarantine ~/Library/Application\ Support/obs-studio/plugins/obs-soniox-subs.plugin
+   ```
+3. Restart OBS.
+4. Open the **Docks** menu (or **View > Docks** on older OBS versions) and
+   check **Live Captions** to show the dock.
+5. Pick your audio source, enter your Soniox API key, and press **Start**.
+
+### Windows
+
+**Not yet built or tested** — this project has only been built and verified
+on macOS so far (see [HANDOFF.md](HANDOFF.md)). Once a Windows build exists,
+installation will follow standard OBS plugin conventions: drop the `.dll`
+into `obs-plugins\64bit\` and its data files into
+`data\obs-plugins\obs-soniox-subs\` under the OBS install directory (or the
+portable `obs-studio\` folder root, for a portable install), then restart
+OBS. This section will be updated once that build is confirmed working.
+
+## Build (from source)
 
 ```
 cmake --preset macos
