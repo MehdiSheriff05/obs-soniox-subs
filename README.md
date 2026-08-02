@@ -32,17 +32,17 @@ needs manual end-to-end verification.
 
 ## Installation
 
-These are end-user steps for someone who already has a built plugin (either
-downloaded from a Release, or built themselves per the **Build** section
-below) — not a development setup.
+Download the build for your platform from the
+[Releases page](https://github.com/MehdiSheriff05/obs-soniox-subs/releases)
+(or build it yourself per the **Build** section below).
 
 ### macOS
 
-1. Copy `obs-soniox-subs.plugin` into
+1. Unzip/open the download and copy `obs-soniox-subs.plugin` into
    `~/Library/Application Support/obs-studio/plugins/`.
-2. If it was downloaded rather than built locally, macOS Gatekeeper will
-   likely quarantine it. Either right-click the `.plugin` bundle > **Open**
-   once, or clear the quarantine flag from Terminal:
+2. Downloaded files get quarantined by Gatekeeper. Either right-click the
+   `.plugin` bundle > **Open** once, or clear the quarantine flag from
+   Terminal:
    ```
    xattr -dr com.apple.quarantine ~/Library/Application\ Support/obs-studio/plugins/obs-soniox-subs.plugin
    ```
@@ -53,13 +53,19 @@ below) — not a development setup.
 
 ### Windows
 
-**Not yet built or tested** — this project has only been built and verified
-on macOS so far (see [HANDOFF.md](HANDOFF.md)). Once a Windows build exists,
-installation will follow standard OBS plugin conventions: drop the `.dll`
-into `obs-plugins\64bit\` and its data files into
-`data\obs-plugins\obs-soniox-subs\` under the OBS install directory (or the
-portable `obs-studio\` folder root, for a portable install), then restart
-OBS. This section will be updated once that build is confirmed working.
+1. Run the downloaded installer (`.exe`), or unzip the `.zip` and copy its
+   `obs-plugins\64bit\obs-soniox-subs.dll` and
+   `data\obs-plugins\obs-soniox-subs\` folder into the matching folders
+   under your OBS install directory (or the portable `obs-studio\` folder
+   root, for a portable install).
+2. Restart OBS.
+3. Open the **Docks** menu (or **View > Docks** on older OBS versions) and
+   check **Live Captions** to show the dock.
+4. Pick your audio source, enter your Soniox API key, and press **Start**.
+
+Windows builds are produced by the same CI pipeline as macOS but have not
+been manually tested end-to-end on a real Windows machine yet — see
+[HANDOFF.md](HANDOFF.md) for what's verified vs. not.
 
 ## Updating
 

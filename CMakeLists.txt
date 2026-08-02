@@ -40,9 +40,14 @@ set(CMAKE_XCODE_ATTRIBUTE_GCC_TREAT_WARNINGS_AS_ERRORS ${_soniox_saved_werror_at
 
 # Belt-and-suspenders: directly silence -Werror on the known fetched targets,
 # regardless of which mechanism actually injected it into the Xcode project.
+# COMPILE_WARNING_AS_ERROR is the portable (all-compilers) way to do this;
+# the raw -Wno-error flag is GCC/Clang-only, so it's skipped on MSVC where
+# it isn't a recognized option.
 foreach(_soniox_tgt IN ITEMS ixwebsocket spdlog msgpack11 zlib)
   if(TARGET ${_soniox_tgt})
-    target_compile_options(${_soniox_tgt} PRIVATE -Wno-error)
+    if(NOT MSVC)
+      target_compile_options(${_soniox_tgt} PRIVATE -Wno-error)
+    endif()
     set_target_properties(
       ${_soniox_tgt}
       PROPERTIES COMPILE_WARNING_AS_ERROR OFF XCODE_ATTRIBUTE_GCC_TREAT_WARNINGS_AS_ERRORS NO
@@ -102,31 +107,34 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE src)
 # and live /System/Library/Frameworks both lack the Mach-O), so the link
 # fails with "framework 'AGL' not found". Nothing in Qt6/libobs's actual
 # Cocoa/Metal rendering path calls into AGL at runtime on this OS version, so
-# a symbol-less stub framework satisfies the linker safely.
-set(_soniox_stub_framework_dir "${CMAKE_BINARY_DIR}/stub-frameworks")
-set(_soniox_agl_stub "${_soniox_stub_framework_dir}/AGL.framework/AGL")
-if(NOT EXISTS "${_soniox_agl_stub}")
-  file(MAKE_DIRECTORY "${_soniox_stub_framework_dir}/AGL.framework")
-  file(WRITE "${CMAKE_BINARY_DIR}/agl_stub.c" "")
-  if(NOT CMAKE_OSX_SYSROOT)
+# a symbol-less stub framework satisfies the linker safely. macOS/clang-only;
+# meaningless on Windows/Linux, where AGL doesn't exist as a concept at all.
+if(APPLE)
+  set(_soniox_stub_framework_dir "${CMAKE_BINARY_DIR}/stub-frameworks")
+  set(_soniox_agl_stub "${_soniox_stub_framework_dir}/AGL.framework/AGL")
+  if(NOT EXISTS "${_soniox_agl_stub}")
+    file(MAKE_DIRECTORY "${_soniox_stub_framework_dir}/AGL.framework")
+    file(WRITE "${CMAKE_BINARY_DIR}/agl_stub.c" "")
+    if(NOT CMAKE_OSX_SYSROOT)
+      execute_process(
+        COMMAND xcrun --sdk macosx --show-sdk-path
+        OUTPUT_VARIABLE CMAKE_OSX_SYSROOT
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+      )
+    endif()
     execute_process(
-      COMMAND xcrun --sdk macosx --show-sdk-path
-      OUTPUT_VARIABLE CMAKE_OSX_SYSROOT
-      OUTPUT_STRIP_TRAILING_WHITESPACE
+      COMMAND
+        ${CMAKE_C_COMPILER} -dynamiclib -arch arm64 -arch x86_64 -isysroot ${CMAKE_OSX_SYSROOT}
+        -mmacosx-version-min=12.0 -install_name
+        /System/Library/Frameworks/AGL.framework/Versions/A/AGL -o "${_soniox_agl_stub}"
+        "${CMAKE_BINARY_DIR}/agl_stub.c"
+      RESULT_VARIABLE _soniox_agl_stub_result
     )
+    if(NOT _soniox_agl_stub_result EQUAL 0)
+      message(FATAL_ERROR "Failed to build stub AGL.framework")
+    endif()
   endif()
-  execute_process(
-    COMMAND
-      ${CMAKE_C_COMPILER} -dynamiclib -arch arm64 -arch x86_64 -isysroot ${CMAKE_OSX_SYSROOT}
-      -mmacosx-version-min=12.0 -install_name
-      /System/Library/Frameworks/AGL.framework/Versions/A/AGL -o "${_soniox_agl_stub}"
-      "${CMAKE_BINARY_DIR}/agl_stub.c"
-    RESULT_VARIABLE _soniox_agl_stub_result
-  )
-  if(NOT _soniox_agl_stub_result EQUAL 0)
-    message(FATAL_ERROR "Failed to build stub AGL.framework")
-  endif()
+  target_link_options(${CMAKE_PROJECT_NAME} PRIVATE "-F${_soniox_stub_framework_dir}")
 endif()
-target_link_options(${CMAKE_PROJECT_NAME} PRIVATE "-F${_soniox_stub_framework_dir}")
 
 set_target_properties_plugin(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME ${_name})
