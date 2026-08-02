@@ -180,9 +180,13 @@ void CaptionsDock::buildUi()
 	captionGroup->addWidget(m_captionPreview);
 	layout->addLayout(captionGroup);
 
-	auto *creditLabel = new QLabel(tr("Live Captions plugin by Mehdi Sheriff — github.com/MehdiSheriff05"), this);
+	auto *creditLabel = new QLabel(
+		tr("Live Captions plugin — <a href=\"https://github.com/MehdiSheriff05\">creator</a>"), this);
 	creditLabel->setAlignment(Qt::AlignCenter);
 	creditLabel->setStyleSheet(QStringLiteral("color: gray; font-size: 10px;"));
+	creditLabel->setTextFormat(Qt::RichText);
+	creditLabel->setTextInteractionFlags(Qt::TextBrowserInteraction);
+	creditLabel->setOpenExternalLinks(true);
 	layout->addWidget(creditLabel);
 
 	layout->addStretch(1);
