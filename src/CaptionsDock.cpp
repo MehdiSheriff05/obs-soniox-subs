@@ -181,7 +181,7 @@ void CaptionsDock::buildUi()
 	layout->addLayout(captionGroup);
 
 	auto *creditLabel = new QLabel(
-		tr("Live Captions plugin — <a href=\"https://github.com/MehdiSheriff05\">creator</a>"), this);
+		tr("<a href=\"https://github.com/MehdiSheriff05\">Soniox Live Captions Plugin</a>"), this);
 	creditLabel->setAlignment(Qt::AlignCenter);
 	creditLabel->setStyleSheet(QStringLiteral("color: gray; font-size: 10px;"));
 	creditLabel->setTextFormat(Qt::RichText);
