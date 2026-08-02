@@ -26,14 +26,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QComboBox>
 #include <QFormLayout>
 #include <QHBoxLayout>
-#include <QJsonArray>
-#include <QJsonDocument>
-#include <QJsonObject>
 #include <QLabel>
 #include <QLineEdit>
-#include <QNetworkAccessManager>
-#include <QNetworkReply>
-#include <QNetworkRequest>
 #include <QPlainTextEdit>
 #include <QProgressBar>
 #include <QPushButton>
@@ -41,8 +35,6 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QTextBlock>
 #include <QTextCursor>
 #include <QTimer>
-#include <QUrl>
-#include <QUrlQuery>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -57,7 +49,6 @@ const char *kCaptionSourceId = "text_ft2_source";
 
 const int kMaxPreviewLines = 10;
 const qint64 kNoAudioWarningMs = 3000;
-const char *kSonioxUsageLogsUrl = "https://api.soniox.com/v1/usage-logs";
 
 bool enumAudioSourceCallback(void *param, obs_source_t *source)
 {
@@ -93,14 +84,6 @@ CaptionsDock::CaptionsDock(QWidget *parent) : QWidget(parent)
 	m_watchdogTimer = new QTimer(this);
 	m_watchdogTimer->setInterval(1000);
 	connect(m_watchdogTimer, &QTimer::timeout, this, &CaptionsDock::onWatchdogTick);
-
-	m_networkManager = new QNetworkAccessManager(this);
-
-	m_costRefreshTimer = new QTimer(this);
-	m_costRefreshTimer->setInterval(120000);
-	connect(m_costRefreshTimer, &QTimer::timeout, this, &CaptionsDock::refreshCostEstimate);
-
-	m_sessionStartUtc = QDateTime::currentDateTimeUtc();
 
 	obs_frontend_add_event_callback(&CaptionsDock::frontendEventCallback, this);
 
@@ -186,28 +169,23 @@ void CaptionsDock::buildUi()
 	levelRow->addWidget(m_levelMeter);
 	layout->addLayout(levelRow);
 
-	auto *costRow = new QHBoxLayout();
-	m_costLabel = new QLabel(tr("Session cost: —"), this);
-	m_costLabel->setToolTip(tr("Estimated spend on your Soniox API key since this dock was opened (or since "
-				    "Start was last pressed). This is not your account's remaining balance — check "
-				    "the Soniox dashboard for that."));
-	m_costRefreshButton = new QPushButton(tr("Check cost"), this);
-	connect(m_costRefreshButton, &QPushButton::clicked, this, &CaptionsDock::refreshCostEstimate);
-	costRow->addWidget(m_costLabel);
-	costRow->addWidget(m_costRefreshButton);
-	layout->addLayout(costRow);
-
-	layout->addWidget(new QLabel(tr("Live captions:"), this));
+	auto *captionGroup = new QVBoxLayout();
+	captionGroup->setSpacing(2);
+	captionGroup->addWidget(new QLabel(tr("Live captions:"), this));
 	m_captionPreview = new QPlainTextEdit(this);
 	m_captionPreview->setReadOnly(true);
 	m_captionPreview->setMaximumBlockCount(kMaxPreviewLines);
-	m_captionPreview->setFixedHeight(70);
-	layout->addWidget(m_captionPreview);
+	m_captionPreview->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+	m_captionPreview->setFixedHeight(100);
+	captionGroup->addWidget(m_captionPreview);
+	layout->addLayout(captionGroup);
 
 	auto *creditLabel = new QLabel(tr("Live Captions plugin by Mehdi Sheriff — github.com/MehdiSheriff05"), this);
 	creditLabel->setAlignment(Qt::AlignCenter);
 	creditLabel->setStyleSheet(QStringLiteral("color: gray; font-size: 10px;"));
 	layout->addWidget(creditLabel);
+
+	layout->addStretch(1);
 
 	setLayout(layout);
 }
@@ -282,8 +260,6 @@ void CaptionsDock::onStartStopClicked()
 		m_sonioxClient.stop();
 		m_audioBridge.stop();
 		m_watchdogTimer->stop();
-		m_costRefreshTimer->stop();
-		refreshCostEstimate();
 		clearCaptionText();
 		setRunningUiState(false);
 		setStatusText(tr("Idle"));
@@ -323,10 +299,6 @@ void CaptionsDock::onStartStopClicked()
 
 	m_noAudioWarned = false;
 	m_watchdogTimer->start();
-
-	m_sessionStartUtc = QDateTime::currentDateTimeUtc();
-	m_costLabel->setText(tr("Session cost: —"));
-	m_costRefreshTimer->start();
 
 	setRunningUiState(true);
 	setStatusText(tr("Connecting..."));
@@ -507,50 +479,3 @@ void CaptionsDock::clearCaptionText()
 	updateCaptionTextSource("");
 }
 
-void CaptionsDock::refreshCostEstimate()
-{
-	QString apiKey = m_apiKeyEdit->text();
-	if (apiKey.isEmpty()) {
-		m_costLabel->setText(tr("Session cost: —"));
-		return;
-	}
-
-	QUrl url(kSonioxUsageLogsUrl);
-	QUrlQuery query;
-	query.addQueryItem("start_time", m_sessionStartUtc.toString(Qt::ISODateWithMs) + "Z");
-	query.addQueryItem("end_time", QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs) + "Z");
-	query.addQueryItem("limit", "1000");
-	url.setQuery(query);
-
-	QNetworkRequest request(url);
-	request.setRawHeader("Authorization", ("Bearer " + apiKey).toUtf8());
-
-	QNetworkReply *reply = m_networkManager->get(request);
-	connect(reply, &QNetworkReply::finished, this, [this, reply]() { onCostReply(reply); });
-}
-
-void CaptionsDock::onCostReply(QNetworkReply *reply)
-{
-	reply->deleteLater();
-
-	if (reply->error() != QNetworkReply::NoError) {
-		m_costLabel->setText(tr("Session cost: unavailable"));
-		m_costLabel->setToolTip(tr("Could not reach Soniox's usage API: %1").arg(reply->errorString()));
-		return;
-	}
-
-	QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
-	if (!doc.isObject()) {
-		m_costLabel->setText(tr("Session cost: unavailable"));
-		return;
-	}
-
-	double totalCost = 0.0;
-	for (const QJsonValue entry : doc.object().value("usage_logs").toArray())
-		totalCost += entry.toObject().value("cost_usd").toDouble();
-
-	m_costLabel->setText(tr("Session cost: $%1 (estimate)").arg(totalCost, 0, 'f', 4));
-	m_costLabel->setToolTip(tr("Estimated spend on this API key since %1 UTC. Check the Soniox dashboard for "
-				   "your actual account balance.")
-					.arg(m_sessionStartUtc.toString(Qt::ISODate)));
-}

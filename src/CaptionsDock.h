@@ -18,7 +18,6 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #pragma once
 
-#include <QDateTime>
 #include <QWidget>
 
 #include "AudioBridge.h"
@@ -35,8 +34,6 @@ class QPlainTextEdit;
 class QProgressBar;
 class QSpinBox;
 class QTimer;
-class QNetworkAccessManager;
-class QNetworkReply;
 
 class CaptionsDock : public QWidget {
 	Q_OBJECT
@@ -54,8 +51,6 @@ private slots:
 	void onSonioxError(const QString &plainMessage, const QString &technicalDetail);
 	void onWatchdogTick();
 	void onMaxLineCharsChanged(int value);
-	void refreshCostEstimate();
-	void onCostReply(QNetworkReply *reply);
 
 private:
 	void buildUi();
@@ -80,11 +75,7 @@ private:
 	QLabel *m_statusLabel = nullptr;
 	QPlainTextEdit *m_captionPreview = nullptr;
 	QProgressBar *m_levelMeter = nullptr;
-	QLabel *m_costLabel = nullptr;
-	QPushButton *m_costRefreshButton = nullptr;
 	QTimer *m_watchdogTimer = nullptr;
-	QTimer *m_costRefreshTimer = nullptr;
-	QNetworkAccessManager *m_networkManager = nullptr;
 
 	AudioBridge m_audioBridge;
 	SonioxClient m_sonioxClient;
@@ -92,7 +83,6 @@ private:
 	obs_source_t *m_captionTextSource = nullptr;
 	QString m_lastFinalizedText;
 	QString m_savedApiKey;
-	QDateTime m_sessionStartUtc;
 	int m_maxLineChars = 60;
 	bool m_running = false;
 	bool m_noAudioWarned = false;
