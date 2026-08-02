@@ -61,6 +61,19 @@ into `obs-plugins\64bit\` and its data files into
 portable `obs-studio\` folder root, for a portable install), then restart
 OBS. This section will be updated once that build is confirmed working.
 
+## Updating
+
+There's no in-app auto-updater (that would need a separate updater framework
+like Sparkle — more scope than this project needs right now). To update:
+
+- **Built from source:** `git pull`, then re-run the build/install steps
+  below, then restart OBS.
+- **Installed from a downloaded release:** download the new `.plugin`,
+  replace the old one at
+  `~/Library/Application Support/obs-studio/plugins/obs-soniox-subs.plugin`,
+  then restart OBS. Your saved API key and settings live in OBS's own config,
+  not in the plugin bundle, so they survive the replacement.
+
 ## Build (from source)
 
 ```

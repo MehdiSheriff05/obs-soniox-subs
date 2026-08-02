@@ -26,14 +26,23 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QComboBox>
 #include <QFormLayout>
 #include <QHBoxLayout>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QLabel>
 #include <QLineEdit>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QPlainTextEdit>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QSpinBox>
 #include <QTextBlock>
 #include <QTextCursor>
 #include <QTimer>
+#include <QUrl>
+#include <QUrlQuery>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -47,8 +56,8 @@ const char *kCaptionSourceId = "text_ft2_source";
 #endif
 
 const int kMaxPreviewLines = 10;
-const int kLineCommitChars = 100;
 const qint64 kNoAudioWarningMs = 3000;
+const char *kSonioxUsageLogsUrl = "https://api.soniox.com/v1/usage-logs";
 
 bool enumAudioSourceCallback(void *param, obs_source_t *source)
 {
@@ -85,11 +94,23 @@ CaptionsDock::CaptionsDock(QWidget *parent) : QWidget(parent)
 	m_watchdogTimer->setInterval(1000);
 	connect(m_watchdogTimer, &QTimer::timeout, this, &CaptionsDock::onWatchdogTick);
 
+	m_networkManager = new QNetworkAccessManager(this);
+
+	m_costRefreshTimer = new QTimer(this);
+	m_costRefreshTimer->setInterval(120000);
+	connect(m_costRefreshTimer, &QTimer::timeout, this, &CaptionsDock::refreshCostEstimate);
+
+	m_sessionStartUtc = QDateTime::currentDateTimeUtc();
+
+	obs_frontend_add_event_callback(&CaptionsDock::frontendEventCallback, this);
+
 	setStatusText(tr("Idle"));
 }
 
 CaptionsDock::~CaptionsDock()
 {
+	obs_frontend_remove_event_callback(&CaptionsDock::frontendEventCallback, this);
+
 	saveSettings();
 
 	m_sonioxClient.stop();
@@ -102,13 +123,27 @@ CaptionsDock::~CaptionsDock()
 	}
 }
 
+void CaptionsDock::frontendEventCallback(enum obs_frontend_event event, void *privateData)
+{
+	auto *self = static_cast<CaptionsDock *>(privateData);
+
+	if (event == OBS_FRONTEND_EVENT_FINISHED_LOADING || event == OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGED)
+		self->refreshSourceList();
+}
+
 void CaptionsDock::buildUi()
 {
 	auto *layout = new QVBoxLayout(this);
 
 	auto *form = new QFormLayout();
 	m_sourceCombo = new QComboBox(this);
-	form->addRow(tr("Audio Source:"), m_sourceCombo);
+	m_refreshSourcesButton = new QPushButton(tr("Refresh"), this);
+	connect(m_refreshSourcesButton, &QPushButton::clicked, this, &CaptionsDock::refreshSourceList);
+
+	auto *sourceRow = new QHBoxLayout();
+	sourceRow->addWidget(m_sourceCombo);
+	sourceRow->addWidget(m_refreshSourcesButton);
+	form->addRow(tr("Audio Source:"), sourceRow);
 
 	m_apiKeyEdit = new QLineEdit(this);
 	m_apiKeyEdit->setEchoMode(QLineEdit::Password);
@@ -122,6 +157,15 @@ void CaptionsDock::buildUi()
 	apiKeyRow->addWidget(m_apiKeyEdit);
 	apiKeyRow->addWidget(m_apiKeyChangeButton);
 	form->addRow(tr("API Key:"), apiKeyRow);
+
+	m_maxLineCharsSpin = new QSpinBox(this);
+	m_maxLineCharsSpin->setRange(20, 200);
+	m_maxLineCharsSpin->setValue(m_maxLineChars);
+	m_maxLineCharsSpin->setToolTip(
+		tr("How much translated text accumulates on screen before it clears and starts a fresh line."));
+	connect(m_maxLineCharsSpin, QOverload<int>::of(&QSpinBox::valueChanged), this,
+		&CaptionsDock::onMaxLineCharsChanged);
+	form->addRow(tr("Max caption length:"), m_maxLineCharsSpin);
 
 	layout->addLayout(form);
 
@@ -142,12 +186,28 @@ void CaptionsDock::buildUi()
 	levelRow->addWidget(m_levelMeter);
 	layout->addLayout(levelRow);
 
+	auto *costRow = new QHBoxLayout();
+	m_costLabel = new QLabel(tr("Session cost: —"), this);
+	m_costLabel->setToolTip(tr("Estimated spend on your Soniox API key since this dock was opened (or since "
+				    "Start was last pressed). This is not your account's remaining balance — check "
+				    "the Soniox dashboard for that."));
+	m_costRefreshButton = new QPushButton(tr("Check cost"), this);
+	connect(m_costRefreshButton, &QPushButton::clicked, this, &CaptionsDock::refreshCostEstimate);
+	costRow->addWidget(m_costLabel);
+	costRow->addWidget(m_costRefreshButton);
+	layout->addLayout(costRow);
+
 	layout->addWidget(new QLabel(tr("Live captions:"), this));
 	m_captionPreview = new QPlainTextEdit(this);
 	m_captionPreview->setReadOnly(true);
 	m_captionPreview->setMaximumBlockCount(kMaxPreviewLines);
-	m_captionPreview->setMinimumHeight(140);
+	m_captionPreview->setFixedHeight(70);
 	layout->addWidget(m_captionPreview);
+
+	auto *creditLabel = new QLabel(tr("Live Captions plugin by Mehdi Sheriff — github.com/MehdiSheriff05"), this);
+	creditLabel->setAlignment(Qt::AlignCenter);
+	creditLabel->setStyleSheet(QStringLiteral("color: gray; font-size: 10px;"));
+	layout->addWidget(creditLabel);
 
 	setLayout(layout);
 }
@@ -181,6 +241,12 @@ void CaptionsDock::loadSettings()
 		if (idx >= 0)
 			m_sourceCombo->setCurrentIndex(idx);
 	}
+
+	long long maxLineChars = config_get_int(config, "SonioxCaptions", "MaxLineChars");
+	if (maxLineChars > 0) {
+		m_maxLineChars = static_cast<int>(maxLineChars);
+		m_maxLineCharsSpin->setValue(m_maxLineChars);
+	}
 }
 
 void CaptionsDock::saveSettings()
@@ -192,7 +258,22 @@ void CaptionsDock::saveSettings()
 	config_set_string(config, "SonioxCaptions", "ApiKey", m_apiKeyEdit->text().toUtf8().constData());
 	config_set_string(config, "SonioxCaptions", "AudioSource",
 			   m_sourceCombo->currentText().toUtf8().constData());
+	config_set_int(config, "SonioxCaptions", "MaxLineChars", m_maxLineChars);
 	config_save(config);
+}
+
+void CaptionsDock::onMaxLineCharsChanged(int value)
+{
+	m_maxLineChars = value;
+
+	// Persist just this value directly rather than calling saveSettings(),
+	// which also writes the API key field's current text — and that field
+	// may be mid-edit (unlocked, cleared) when this fires.
+	config_t *config = obs_frontend_get_user_config();
+	if (config) {
+		config_set_int(config, "SonioxCaptions", "MaxLineChars", m_maxLineChars);
+		config_save(config);
+	}
 }
 
 void CaptionsDock::onStartStopClicked()
@@ -201,6 +282,8 @@ void CaptionsDock::onStartStopClicked()
 		m_sonioxClient.stop();
 		m_audioBridge.stop();
 		m_watchdogTimer->stop();
+		m_costRefreshTimer->stop();
+		refreshCostEstimate();
 		clearCaptionText();
 		setRunningUiState(false);
 		setStatusText(tr("Idle"));
@@ -240,6 +323,11 @@ void CaptionsDock::onStartStopClicked()
 
 	m_noAudioWarned = false;
 	m_watchdogTimer->start();
+
+	m_sessionStartUtc = QDateTime::currentDateTimeUtc();
+	m_costLabel->setText(tr("Session cost: —"));
+	m_costRefreshTimer->start();
+
 	setRunningUiState(true);
 	setStatusText(tr("Connecting..."));
 }
@@ -249,6 +337,7 @@ void CaptionsDock::setRunningUiState(bool running)
 	m_running = running;
 	m_startStopButton->setText(running ? tr("Stop") : tr("Start"));
 	m_sourceCombo->setEnabled(!running);
+	m_refreshSourcesButton->setEnabled(!running);
 	m_apiKeyEdit->setEnabled(!running);
 	m_apiKeyChangeButton->setEnabled(!running);
 }
@@ -297,7 +386,7 @@ void CaptionsDock::onCaptionReady(const QString &text, bool isFinal)
 	updateCaptionTextSource(display);
 	updatePreviewCurrentLine(display);
 
-	if (isFinal && m_lastFinalizedText.length() >= kLineCommitChars) {
+	if (isFinal && m_lastFinalizedText.length() >= m_maxLineChars) {
 		m_lastFinalizedText.clear();
 		m_captionPreview->appendPlainText(QString());
 	}
@@ -366,18 +455,27 @@ void CaptionsDock::ensureCaptionTextSource()
 	if (m_captionTextSource)
 		return;
 
+	obs_video_info ovi;
+	uint32_t canvasWidth = obs_get_video_info(&ovi) ? ovi.base_width : 1920;
+
 	obs_source_t *existing = obs_get_source_by_name(kCaptionSourceName);
 	if (existing) {
 		m_captionTextSource = existing;
 	} else {
-		obs_data_t *settings = obs_data_create();
-		obs_data_set_string(settings, "text", "");
-		m_captionTextSource = obs_source_create(kCaptionSourceId, kCaptionSourceName, settings, nullptr);
-		obs_data_release(settings);
+		m_captionTextSource = obs_source_create(kCaptionSourceId, kCaptionSourceName, nullptr, nullptr);
 	}
 
 	if (!m_captionTextSource)
 		return;
+
+	// Applied unconditionally (not just at creation) so a source created by
+	// an earlier version of this plugin, before word-wrap was added, still
+	// gets bounded to the canvas width instead of running off-screen.
+	obs_data_t *sizingSettings = obs_data_create();
+	obs_data_set_bool(sizingSettings, "word_wrap", true);
+	obs_data_set_int(sizingSettings, "custom_width", canvasWidth);
+	obs_source_update(m_captionTextSource, sizingSettings);
+	obs_data_release(sizingSettings);
 
 	obs_source_t *sceneSource = obs_frontend_get_current_scene();
 	if (!sceneSource)
@@ -407,4 +505,52 @@ void CaptionsDock::clearCaptionText()
 		return;
 
 	updateCaptionTextSource("");
+}
+
+void CaptionsDock::refreshCostEstimate()
+{
+	QString apiKey = m_apiKeyEdit->text();
+	if (apiKey.isEmpty()) {
+		m_costLabel->setText(tr("Session cost: —"));
+		return;
+	}
+
+	QUrl url(kSonioxUsageLogsUrl);
+	QUrlQuery query;
+	query.addQueryItem("start_time", m_sessionStartUtc.toString(Qt::ISODateWithMs) + "Z");
+	query.addQueryItem("end_time", QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs) + "Z");
+	query.addQueryItem("limit", "1000");
+	url.setQuery(query);
+
+	QNetworkRequest request(url);
+	request.setRawHeader("Authorization", ("Bearer " + apiKey).toUtf8());
+
+	QNetworkReply *reply = m_networkManager->get(request);
+	connect(reply, &QNetworkReply::finished, this, [this, reply]() { onCostReply(reply); });
+}
+
+void CaptionsDock::onCostReply(QNetworkReply *reply)
+{
+	reply->deleteLater();
+
+	if (reply->error() != QNetworkReply::NoError) {
+		m_costLabel->setText(tr("Session cost: unavailable"));
+		m_costLabel->setToolTip(tr("Could not reach Soniox's usage API: %1").arg(reply->errorString()));
+		return;
+	}
+
+	QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
+	if (!doc.isObject()) {
+		m_costLabel->setText(tr("Session cost: unavailable"));
+		return;
+	}
+
+	double totalCost = 0.0;
+	for (const QJsonValue entry : doc.object().value("usage_logs").toArray())
+		totalCost += entry.toObject().value("cost_usd").toDouble();
+
+	m_costLabel->setText(tr("Session cost: $%1 (estimate)").arg(totalCost, 0, 'f', 4));
+	m_costLabel->setToolTip(tr("Estimated spend on this API key since %1 UTC. Check the Soniox dashboard for "
+				   "your actual account balance.")
+					.arg(m_sessionStartUtc.toString(Qt::ISODate)));
 }
