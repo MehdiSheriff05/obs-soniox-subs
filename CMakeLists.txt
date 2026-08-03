@@ -61,6 +61,14 @@ find_package(libobs REQUIRED)
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE OBS::libobs)
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE ixwebsocket)
 
+# IXWebSocket uses mbedtls for TLS on Windows by default; mbedtls's entropy
+# source calls BCryptGenRandom (Windows CNG API), which isn't linked
+# automatically. Confirmed via a real failed Windows CI build: "unresolved
+# external symbol BCryptGenRandom".
+if(WIN32)
+  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE bcrypt)
+endif()
+
 # Our own target keeps -Werror, but ixwebsocket's headers (which we #include
 # directly) aren't warning-clean; mark its include dirs as SYSTEM so clang
 # suppresses warnings originating from headers found there.
