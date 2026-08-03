@@ -3,9 +3,18 @@
 An OBS Studio plugin that shows live Urdu -> English translated captions
 during mosque livestreams, powered by [Soniox](https://soniox.com)'s
 real-time speech-to-text translation API. Built for a non-technical
-volunteer operator: a single dock with an audio source picker, a live
-caption preview, an audio input level meter, and plain-language status/error
-messages (technical detail on hover).
+volunteer operator: a single dock, split into four tabs so the everyday
+controls stay uncluttered:
+
+- **Captions** — audio source picker, max caption length, Start/Stop, a
+  live caption preview, an audio input level meter, and plain-language
+  status/error messages (technical detail on hover). This is the only tab
+  you need for day-to-day use.
+- **Stats** — elapsed session time, an estimated cost for the session, and
+  a reconnect counter (a rising count usually means a shaky network).
+- **Settings** — the Soniox API key, and a **Check for Updates** button.
+- **Appearance** — font, an outline/border toggle, and (Windows only) a
+  translucent background toggle for the on-screen caption text.
 
 Created by [Mehdi Sheriff](https://github.com/MehdiSheriff05).
 
@@ -26,9 +35,24 @@ needs manual end-to-end verification.
 - API key and last-used audio source are stored in OBS's user config
   (`obs_frontend_get_user_config()`) as plain text — standard for a
   single-operator local setup, not a secrets vault.
-- Check your Soniox account's own usage credits/quota independently — this
-  plugin doesn't surface remaining account balance, only per-connection
-  errors from the API itself.
+- The Stats tab's session cost is an **estimate**, computed locally from
+  elapsed time × Soniox's published flat real-time rate ($0.12/hour,
+  translation included at no extra charge, per
+  [soniox.com/pricing](https://soniox.com/pricing) as of Aug 2026) — it is
+  not a real bill (actual Soniox billing is token-based) and it is not your
+  account balance. Check your Soniox account's own usage/quota page
+  independently for that.
+- The **Appearance** tab's outline and translucent-background options are
+  effectively Windows-only. OBS's macOS/Linux text source
+  (`text_ft2_source`) has no background-box property at all, and its
+  "outline" toggle just re-draws the same-colored text offset in a few
+  directions rather than drawing a distinct black stroke — a real
+  cross-platform border/background would need rendering captions through a
+  browser source instead of OBS's native text source, which this plugin
+  doesn't do (yet).
+- The font picker only takes effect if the chosen font is actually
+  installed on the machine running OBS — e.g. the default, **Poppins**, is
+  a Google font not preinstalled on macOS or Windows.
 
 ## Installation
 
@@ -74,16 +98,25 @@ Either way, then:
 
 ## Updating
 
-There's no in-app auto-updater (that would need a separate updater framework
-like Sparkle — more scope than this project needs right now). To update:
+The **Settings** tab checks GitHub Releases for a newer version automatically
+on startup, and has a **Check for Updates** button for on demand checks. When
+a newer version is available, an **Install Update** button appears on the
+Captions tab too — it downloads the matching installer for your platform and
+launches it for you.
+
+This isn't a fully seamless update: neither platform can safely replace its
+own plugin file while OBS has it loaded, so **you still need to restart OBS**
+once the installer finishes for the new version to take effect. Your saved
+API key and settings live in OBS's own config, not in the plugin files, so
+they survive the update either way.
+
+To update manually instead (or if you built from source):
 
 - **Built from source:** `git pull`, then re-run the build/install steps
   below, then restart OBS.
-- **Installed from a downloaded release:** download the new `.plugin`,
-  replace the old one at
-  `~/Library/Application Support/obs-studio/plugins/obs-soniox-subs.plugin`,
-  then restart OBS. Your saved API key and settings live in OBS's own config,
-  not in the plugin bundle, so they survive the replacement.
+- **Installed from a downloaded release:** download the new build from the
+  [Releases page](https://github.com/MehdiSheriff05/obs-soniox-subs/releases)
+  and run/copy it per the **Installation** section above, then restart OBS.
 
 ## Build (from source)
 
