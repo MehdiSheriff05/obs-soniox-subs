@@ -328,30 +328,8 @@ QWidget *CaptionsDock::buildAppearanceTab()
 
 	m_outlineCheckBox = new QCheckBox(tr("Show text outline / border"), content);
 	m_outlineCheckBox->setChecked(true);
-#if defined(_WIN32)
-	m_outlineCheckBox->setToolTip(tr("Draws a black outline around the caption text."));
-#else
-	m_outlineCheckBox->setToolTip(tr("On macOS/Linux this softens the text edge rather than drawing a distinct "
-					  "black outline — OBS's text source here has no separate outline color, "
-					  "unlike the Windows version of this plugin."));
-#endif
 	connect(m_outlineCheckBox, &QCheckBox::toggled, this, &CaptionsDock::onAppearanceSettingChanged);
 	layout->addWidget(m_outlineCheckBox);
-
-#if defined(_WIN32)
-	m_backgroundCheckBox = new QCheckBox(tr("Translucent background behind text"), content);
-	m_backgroundCheckBox->setChecked(false);
-	connect(m_backgroundCheckBox, &QCheckBox::toggled, this, &CaptionsDock::onAppearanceSettingChanged);
-	layout->addWidget(m_backgroundCheckBox);
-#else
-	auto *backgroundNoteLabel = new QLabel(
-		tr("A translucent background box isn't available on macOS/Linux — OBS's text source here has no "
-		   "background-box property (the Windows version of this plugin's text source does)."),
-		content);
-	backgroundNoteLabel->setWordWrap(true);
-	backgroundNoteLabel->setStyleSheet(QStringLiteral("color: gray; font-size: 10px;"));
-	layout->addWidget(backgroundNoteLabel);
-#endif
 
 	layout->addStretch(1);
 
@@ -402,11 +380,6 @@ void CaptionsDock::loadSettings()
 
 	if (config_has_user_value(config, "SonioxCaptions", "OutlineEnabled"))
 		m_outlineCheckBox->setChecked(config_get_bool(config, "SonioxCaptions", "OutlineEnabled"));
-
-#if defined(_WIN32)
-	if (config_has_user_value(config, "SonioxCaptions", "BackgroundEnabled"))
-		m_backgroundCheckBox->setChecked(config_get_bool(config, "SonioxCaptions", "BackgroundEnabled"));
-#endif
 }
 
 void CaptionsDock::saveSettings()
@@ -445,9 +418,6 @@ void CaptionsDock::onAppearanceSettingChanged()
 		config_set_string(config, "SonioxCaptions", "FontFace",
 				   m_fontComboBox->currentFont().family().toUtf8().constData());
 		config_set_bool(config, "SonioxCaptions", "OutlineEnabled", m_outlineCheckBox->isChecked());
-#if defined(_WIN32)
-		config_set_bool(config, "SonioxCaptions", "BackgroundEnabled", m_backgroundCheckBox->isChecked());
-#endif
 		config_save(config);
 	}
 }
@@ -711,25 +681,18 @@ void CaptionsDock::applyCaptionStyleSettings()
 
 	obs_data_t *fontSettings = obs_data_create();
 	obs_data_set_string(fontSettings, "face", m_fontComboBox->currentFont().family().toUtf8().constData());
+	obs_data_set_int(fontSettings, "size", 48);
 	obs_data_set_obj(styleSettings, "font", fontSettings);
 	obs_data_release(fontSettings);
 
-	// A black stroke/outline is only genuinely possible on Windows
-	// (text_gdiplus has real outline_color/bk_color/bk_opacity settings).
-	// text_ft2_source (macOS/Linux) has no background-box property at all,
-	// and its "outline" toggle just redraws the same glyph texture offset in
-	// 8 directions — a same-color blur, not a distinct black stroke. There's
-	// no settings-level way around that; a true cross-platform stroke would
-	// need rendering captions via a browser source instead of this native
-	// text source.
+	// Same setting applied identically on every platform, deliberately —
+	// text_ft2_source (macOS/Linux) and text_gdiplus (Windows) render this
+	// "outline" toggle differently under the hood (a real black stroke on
+	// Windows; a softer same-color edge on macOS/Linux, since that source
+	// has no separate outline color), but that's OBS's own engine
+	// difference, not something this plugin should paper over by sending
+	// different settings per platform.
 	obs_data_set_bool(styleSettings, "outline", m_outlineCheckBox->isChecked());
-#if defined(_WIN32)
-	obs_data_set_int(styleSettings, "outline_color", 0x00000000);
-	obs_data_set_int(styleSettings, "outline_size", 3);
-	obs_data_set_int(styleSettings, "outline_opacity", 100);
-	obs_data_set_int(styleSettings, "bk_color", 0x00000000);
-	obs_data_set_int(styleSettings, "bk_opacity", m_backgroundCheckBox->isChecked() ? 60 : 0);
-#endif
 
 	obs_source_update(m_captionTextSource, styleSettings);
 	obs_data_release(styleSettings);

@@ -13,8 +13,8 @@ controls stay uncluttered:
 - **Stats** — elapsed session time, an estimated cost for the session, and
   a reconnect counter (a rising count usually means a shaky network).
 - **Settings** — the Soniox API key, and a **Check for Updates** button.
-- **Appearance** — font, an outline/border toggle, and (Windows only) a
-  translucent background toggle for the on-screen caption text.
+- **Appearance** — font and an outline/border toggle for the on-screen
+  caption text (the same settings are applied on both macOS and Windows).
 
 Created by [Mehdi Sheriff](https://github.com/MehdiSheriff05).
 
@@ -42,14 +42,15 @@ needs manual end-to-end verification.
   not a real bill (actual Soniox billing is token-based) and it is not your
   account balance. Check your Soniox account's own usage/quota page
   independently for that.
-- The **Appearance** tab's outline and translucent-background options are
-  effectively Windows-only. OBS's macOS/Linux text source
-  (`text_ft2_source`) has no background-box property at all, and its
-  "outline" toggle just re-draws the same-colored text offset in a few
-  directions rather than drawing a distinct black stroke — a real
-  cross-platform border/background would need rendering captions through a
-  browser source instead of OBS's native text source, which this plugin
-  doesn't do (yet).
+- The **Appearance** tab's outline toggle sends the same request on both
+  platforms, but OBS's two text source implementations render it
+  differently: `text_gdiplus` (Windows) draws a real black stroke;
+  `text_ft2_source` (macOS/Linux) has no separate outline color, so it just
+  softens the text edge instead. That's a difference in OBS's own text
+  sources, not something this plugin's settings can paper over. A
+  translucent background box was considered but dropped — it only exists
+  on Windows' text source at all, and this plugin only ships features that
+  behave the same on both platforms.
 - The font picker only takes effect if the chosen font is actually
   installed on the machine running OBS — e.g. the default, **Poppins**, is
   a Google font not preinstalled on macOS or Windows.

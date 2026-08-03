@@ -117,11 +117,6 @@ private:
 	// Appearance tab
 	QFontComboBox *m_fontComboBox = nullptr;
 	QCheckBox *m_outlineCheckBox = nullptr;
-#if defined(_WIN32)
-	// Translucent background box only exists on text_gdiplus (Windows);
-	// text_ft2_source (macOS/Linux) has no equivalent property at all.
-	QCheckBox *m_backgroundCheckBox = nullptr;
-#endif
 
 	QTimer *m_watchdogTimer = nullptr;
 

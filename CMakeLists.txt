@@ -93,6 +93,33 @@ if(ENABLE_QT)
     ${CMAKE_PROJECT_NAME}
     PROPERTIES AUTOMOC ON AUTOUIC ON AUTORCC ON
   )
+
+  # OBS's own bundled Qt6 ships no TLS backend plugin at all, so
+  # QNetworkAccessManager (used by UpdateChecker for the GitHub Releases
+  # check) fails outright with "No functional TLS backend was found" /
+  # "TLS initialization failed" -- confirmed via a real OBS log. IXWebSocket's
+  # connection to Soniox is unaffected since it talks to Secure
+  # Transport/mbedtls directly, bypassing Qt's plugin system entirely.
+  # Bundle the TLS backend plugin(s) from this build's own Qt6 dependency
+  # into the plugin itself so one actually exists at runtime; UpdateChecker
+  # points Qt at it via QCoreApplication::addLibraryPath() using
+  # obs_module_file() to find it wherever it landed.
+  get_filename_component(_soniox_qt6_root "${Qt6_DIR}/../../.." ABSOLUTE)
+  file(GLOB _soniox_qt_tls_plugins "${_soniox_qt6_root}/plugins/tls/*")
+  if(_soniox_qt_tls_plugins)
+    if(APPLE)
+      target_sources(${CMAKE_PROJECT_NAME} PRIVATE ${_soniox_qt_tls_plugins})
+      set_source_files_properties(${_soniox_qt_tls_plugins} PROPERTIES MACOSX_PACKAGE_LOCATION "Resources/tls")
+    elseif(WIN32)
+      install(FILES ${_soniox_qt_tls_plugins} DESTINATION "${CMAKE_PROJECT_NAME}/data/tls")
+    else()
+      install(FILES ${_soniox_qt_tls_plugins}
+              DESTINATION "${CMAKE_INSTALL_DATAROOTDIR}/obs/obs-plugins/${CMAKE_PROJECT_NAME}/tls")
+    endif()
+  else()
+    message(WARNING "No Qt6 TLS backend plugins found under ${_soniox_qt6_root}/plugins/tls — "
+                     "the in-app update checker's network requests will fail at runtime.")
+  endif()
 endif()
 
 target_sources(

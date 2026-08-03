@@ -22,6 +22,9 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "CaptionsDock.h"
 
+#include <QCoreApplication>
+#include <QString>
+
 OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE(PLUGIN_NAME, "en-US")
 
@@ -31,6 +34,14 @@ const char *kDockId = "SonioxLiveCaptionsDock";
 
 bool obs_module_load(void)
 {
+	// OBS's own bundled Qt6 ships no TLS backend plugin, so QNetworkAccessManager
+	// (used by UpdateChecker) fails outright without one. This plugin bundles a
+	// TLS backend of its own (see CMakeLists.txt) under its data path; point Qt
+	// at it before anything tries to make an HTTPS request.
+	const char *dataPath = obs_get_module_data_path(obs_current_module());
+	if (dataPath)
+		QCoreApplication::addLibraryPath(QString::fromUtf8(dataPath));
+
 	auto *dock = new CaptionsDock();
 	obs_frontend_add_dock_by_id(kDockId, obs_module_text("LiveCaptions.DockTitle"), dock);
 
