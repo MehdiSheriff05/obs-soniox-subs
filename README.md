@@ -53,19 +53,24 @@ Download the build for your platform from the
 
 ### Windows
 
-1. Run the downloaded installer (`.exe`), or unzip the `.zip` and copy its
-   `obs-plugins\64bit\obs-soniox-subs.dll` and
-   `data\obs-plugins\obs-soniox-subs\` folder into the matching folders
-   under your OBS install directory (or the portable `obs-studio\` folder
-   root, for a portable install).
-2. Restart OBS.
-3. Open the **Docks** menu (or **View > Docks** on older OBS versions) and
-   check **Live Captions** to show the dock.
-4. Pick your audio source, enter your Soniox API key, and press **Start**.
+**Option A — Installer (recommended):** run the downloaded
+`...-windows-x64-Installer.exe`. It installs to
+`%ProgramData%\obs-studio\plugins\obs-soniox-subs\` — OBS's recommended
+location for third-party plugins, which doesn't require admin rights — and
+appears in Windows' Add/Remove Programs for easy uninstalling.
 
-Windows builds are produced by the same CI pipeline as macOS but have not
-been manually tested end-to-end on a real Windows machine yet — see
-[HANDOFF.md](HANDOFF.md) for what's verified vs. not.
+**Option B — Manual zip:** unzip the `.zip` and copy the `obs-soniox-subs`
+folder inside it (containing `bin\64bit\obs-soniox-subs.dll` and `data\`)
+into `%ProgramData%\obs-studio\plugins\` (create the `plugins` folder if it
+doesn't exist yet), so you end up with
+`%ProgramData%\obs-studio\plugins\obs-soniox-subs\bin\64bit\obs-soniox-subs.dll`.
+
+Either way, then:
+
+1. Restart OBS.
+2. Open the **Docks** menu (or **View > Docks** on older OBS versions) and
+   check **Live Captions** to show the dock.
+3. Pick your audio source, enter your Soniox API key, and press **Start**.
 
 ## Updating
 
