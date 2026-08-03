@@ -164,6 +164,31 @@ void CaptionsDock::buildUi()
 	m_tabWidget->addTab(wrapInScrollArea(buildSettingsTab()), tr("Settings"));
 
 	outerLayout->addWidget(m_tabWidget);
+
+	// A footer outside the tab widget, not inside any one tab's scroll area,
+	// so it stays pinned to the bottom of the dock regardless of which tab
+	// is active or how far that tab's content is scrolled.
+	auto *creditLabel = new QLabel(
+		tr("<a href=\"https://github.com/MehdiSheriff05/obs-soniox-subs/releases\">"
+		   "Soniox Live Captions Plugin v%1</a>")
+			.arg(QString::fromUtf8(PLUGIN_VERSION)),
+		this);
+	creditLabel->setAlignment(Qt::AlignCenter);
+	creditLabel->setStyleSheet(QStringLiteral("color: gray; font-size: 10px;"));
+	creditLabel->setTextFormat(Qt::RichText);
+	creditLabel->setTextInteractionFlags(Qt::TextBrowserInteraction);
+	creditLabel->setOpenExternalLinks(true);
+	outerLayout->addWidget(creditLabel);
+
+	auto *authorLabel =
+		new QLabel(tr("<a href=\"https://github.com/MehdiSheriff05\">by MehdiSheriff05</a>"), this);
+	authorLabel->setAlignment(Qt::AlignCenter);
+	authorLabel->setStyleSheet(QStringLiteral("color: gray; font-size: 9px;"));
+	authorLabel->setTextFormat(Qt::RichText);
+	authorLabel->setTextInteractionFlags(Qt::TextBrowserInteraction);
+	authorLabel->setOpenExternalLinks(true);
+	outerLayout->addWidget(authorLabel);
+
 	setLayout(outerLayout);
 }
 
@@ -230,18 +255,6 @@ QWidget *CaptionsDock::buildCaptionsTab()
 	m_captionPreview->setFixedHeight(100);
 	captionGroup->addWidget(m_captionPreview);
 	layout->addLayout(captionGroup);
-
-	auto *creditLabel = new QLabel(
-		tr("<a href=\"https://github.com/MehdiSheriff05/obs-soniox-subs/releases\">"
-		   "Soniox Live Captions Plugin v%1</a>")
-			.arg(QString::fromUtf8(PLUGIN_VERSION)),
-		content);
-	creditLabel->setAlignment(Qt::AlignCenter);
-	creditLabel->setStyleSheet(QStringLiteral("color: gray; font-size: 10px;"));
-	creditLabel->setTextFormat(Qt::RichText);
-	creditLabel->setTextInteractionFlags(Qt::TextBrowserInteraction);
-	creditLabel->setOpenExternalLinks(true);
-	layout->addWidget(creditLabel);
 
 	layout->addStretch(1);
 
