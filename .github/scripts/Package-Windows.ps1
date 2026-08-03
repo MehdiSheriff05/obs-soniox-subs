@@ -3,7 +3,8 @@ param(
     [ValidateSet('x64')]
     [string] $Target = 'x64',
     [ValidateSet('Debug', 'RelWithDebInfo', 'Release', 'MinSizeRel')]
-    [string] $Configuration = 'RelWithDebInfo'
+    [string] $Configuration = 'RelWithDebInfo',
+    [switch] $Package
 )
 
 $ErrorActionPreference = 'Stop'
@@ -67,6 +68,32 @@ function Package {
     }
     Compress-Archive -Force @CompressArgs
     Log-Group
+
+    if ( $Package ) {
+        Log-Group "Building Windows installer for ${ProductName}..."
+
+        $IsccPath = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
+        if ( ! ( Test-Path $IsccPath ) ) {
+            throw "Inno Setup compiler not found at '${IsccPath}'"
+        }
+
+        $IssFile = "${ScriptHome}/innosetup/obs-soniox-subs.iss"
+        $InstallerSourceDir = "${ProjectRoot}/release/${Configuration}/${ProductName}"
+
+        $IsccArgs = @(
+            "/DMyAppVersion=${ProductVersion}",
+            "/DSourceDir=${InstallerSourceDir}",
+            "/DOutputDir=${ProjectRoot}/release",
+            "/DOutputBaseFilename=${OutputName}-Installer",
+            "${IssFile}"
+        )
+        & $IsccPath @IsccArgs
+
+        if ( $LASTEXITCODE -ne 0 ) {
+            throw "Inno Setup compilation failed with exit code ${LASTEXITCODE}"
+        }
+        Log-Group
+    }
 }
 
 Package
