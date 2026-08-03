@@ -47,6 +47,9 @@ ArchitecturesInstallIn64BitMode=x64compatible
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
+[Messages]
+FinishedLabel=Setup has finished installing [name] on your computer.%n%nInstalled to:%n{app}%n%nRestart OBS, then enable the dock from the Docks menu.
+
 [Files]
 Source: "{#SourceDir}\bin\64bit\obs-soniox-subs.dll"; DestDir: "{app}\bin\64bit"; Flags: ignoreversion
 Source: "{#SourceDir}\data\locale\en-US.ini"; DestDir: "{app}\data\locale"; Flags: ignoreversion

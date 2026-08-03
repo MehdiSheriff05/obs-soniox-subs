@@ -38,7 +38,7 @@
     },
     "name": "obs-soniox-subs",
     "displayName": "Live Captions (Soniox)",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "author": "Mehdi Sheriff",
     "website": "https://github.com/MehdiSheriff05/obs-soniox-subs",
     "email": "mehdirsheriff@gmail.com"

@@ -83,8 +83,8 @@ if(ENABLE_FRONTEND_API)
 endif()
 
 if(ENABLE_QT)
-  find_package(Qt6 COMPONENTS Widgets Core REQUIRED)
-  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE Qt6::Core Qt6::Widgets)
+  find_package(Qt6 COMPONENTS Widgets Core Network REQUIRED)
+  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE Qt6::Core Qt6::Widgets Qt6::Network)
   target_compile_options(
     ${CMAKE_PROJECT_NAME}
     PRIVATE $<$<C_COMPILER_ID:Clang,AppleClang>:-Wno-quoted-include-in-framework-header -Wno-comma>
@@ -105,6 +105,8 @@ target_sources(
     src/AudioBridge.h
     src/SonioxClient.cpp
     src/SonioxClient.h
+    src/UpdateChecker.cpp
+    src/UpdateChecker.h
 )
 
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE src)

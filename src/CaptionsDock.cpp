@@ -23,7 +23,9 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <plugin-support.h>
 #include <util/config-file.h>
 
+#include <QCheckBox>
 #include <QComboBox>
+#include <QFontComboBox>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -33,6 +35,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSpinBox>
+#include <QTabWidget>
 #include <QTextBlock>
 #include <QTextCursor>
 #include <QTimer>
@@ -66,6 +69,18 @@ bool enumAudioSourceCallback(void *param, obs_source_t *source)
 	return true;
 }
 
+QString formatElapsed(qint64 elapsedMs)
+{
+	qint64 totalSeconds = elapsedMs / 1000;
+	int hours = static_cast<int>(totalSeconds / 3600);
+	int minutes = static_cast<int>((totalSeconds % 3600) / 60);
+	int seconds = static_cast<int>(totalSeconds % 60);
+	return QStringLiteral("%1:%2:%3")
+		.arg(hours, 2, 10, QLatin1Char('0'))
+		.arg(minutes, 2, 10, QLatin1Char('0'))
+		.arg(seconds, 2, 10, QLatin1Char('0'));
+}
+
 } // namespace
 
 CaptionsDock::CaptionsDock(QWidget *parent) : QWidget(parent)
@@ -79,6 +94,13 @@ CaptionsDock::CaptionsDock(QWidget *parent) : QWidget(parent)
 	connect(&m_sonioxClient, &SonioxClient::statusChanged, this, &CaptionsDock::onSonioxStatusChanged);
 	connect(&m_sonioxClient, &SonioxClient::errorOccurred, this, &CaptionsDock::onSonioxError);
 
+	connect(&m_updateChecker, &UpdateChecker::updateAvailable, this, &CaptionsDock::onUpdateAvailable);
+	connect(&m_updateChecker, &UpdateChecker::upToDate, this, &CaptionsDock::onUpdateUpToDate);
+	connect(&m_updateChecker, &UpdateChecker::checkFailed, this, &CaptionsDock::onUpdateCheckFailed);
+	connect(&m_updateChecker, &UpdateChecker::downloadStarted, this, &CaptionsDock::onUpdateDownloadStarted);
+	connect(&m_updateChecker, &UpdateChecker::installerLaunched, this, &CaptionsDock::onInstallerLaunched);
+	connect(&m_updateChecker, &UpdateChecker::downloadFailed, this, &CaptionsDock::onUpdateDownloadFailed);
+
 	m_audioBridge.setAudioReadyCallback(
 		[this](const uint8_t *data, size_t byteCount) { m_sonioxClient.sendAudio(data, byteCount); });
 
@@ -86,9 +108,15 @@ CaptionsDock::CaptionsDock(QWidget *parent) : QWidget(parent)
 	m_watchdogTimer->setInterval(1000);
 	connect(m_watchdogTimer, &QTimer::timeout, this, &CaptionsDock::onWatchdogTick);
 
+	m_statsTimer = new QTimer(this);
+	m_statsTimer->setInterval(1000);
+	connect(m_statsTimer, &QTimer::timeout, this, &CaptionsDock::onStatsTick);
+
 	obs_frontend_add_event_callback(&CaptionsDock::frontendEventCallback, this);
 
 	setStatusText(tr("Idle"));
+
+	m_updateChecker.checkForUpdate();
 }
 
 CaptionsDock::~CaptionsDock()
@@ -115,22 +143,49 @@ void CaptionsDock::frontendEventCallback(enum obs_frontend_event event, void *pr
 		self->refreshSourceList();
 }
 
+QWidget *CaptionsDock::wrapInScrollArea(QWidget *content)
+{
+	auto *scrollArea = new QScrollArea();
+	scrollArea->setWidgetResizable(true);
+	scrollArea->setFrameShape(QFrame::NoFrame);
+	scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+	scrollArea->setWidget(content);
+	return scrollArea;
+}
+
 void CaptionsDock::buildUi()
 {
 	auto *outerLayout = new QVBoxLayout(this);
 	outerLayout->setContentsMargins(0, 0, 0, 0);
 
-	auto *scrollArea = new QScrollArea(this);
-	scrollArea->setWidgetResizable(true);
-	scrollArea->setFrameShape(QFrame::NoFrame);
-	scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+	m_tabWidget = new QTabWidget(this);
+	m_tabWidget->addTab(wrapInScrollArea(buildCaptionsTab()), tr("Captions"));
+	m_tabWidget->addTab(wrapInScrollArea(buildStatsTab()), tr("Stats"));
+	m_tabWidget->addTab(wrapInScrollArea(buildSettingsTab()), tr("Settings"));
+	m_tabWidget->addTab(wrapInScrollArea(buildAppearanceTab()), tr("Appearance"));
 
-	auto *content = new QWidget(scrollArea);
+	outerLayout->addWidget(m_tabWidget);
+	setLayout(outerLayout);
+}
+
+QWidget *CaptionsDock::buildCaptionsTab()
+{
+	auto *content = new QWidget();
 	auto *layout = new QVBoxLayout(content);
 
+	m_updateBannerLabel = new QLabel(content);
+	m_updateBannerLabel->setWordWrap(true);
+	m_updateBannerLabel->setVisible(false);
+	layout->addWidget(m_updateBannerLabel);
+
+	m_updateInstallButton = new QPushButton(tr("Install Update"), content);
+	m_updateInstallButton->setVisible(false);
+	connect(m_updateInstallButton, &QPushButton::clicked, this, &CaptionsDock::onInstallUpdateClicked);
+	layout->addWidget(m_updateInstallButton);
+
 	auto *form = new QFormLayout();
-	m_sourceCombo = new QComboBox(this);
-	m_refreshSourcesButton = new QPushButton(tr("Refresh"), this);
+	m_sourceCombo = new QComboBox(content);
+	m_refreshSourcesButton = new QPushButton(tr("Refresh"), content);
 	connect(m_refreshSourcesButton, &QPushButton::clicked, this, &CaptionsDock::refreshSourceList);
 
 	auto *sourceRow = new QHBoxLayout();
@@ -138,20 +193,7 @@ void CaptionsDock::buildUi()
 	sourceRow->addWidget(m_refreshSourcesButton);
 	form->addRow(tr("Audio Source:"), sourceRow);
 
-	m_apiKeyEdit = new QLineEdit(this);
-	m_apiKeyEdit->setEchoMode(QLineEdit::Password);
-	m_apiKeyEdit->setPlaceholderText(tr("Soniox API key"));
-
-	m_apiKeyChangeButton = new QPushButton(tr("Change"), this);
-	m_apiKeyChangeButton->setVisible(false);
-	connect(m_apiKeyChangeButton, &QPushButton::clicked, this, &CaptionsDock::onApiKeyChangeClicked);
-
-	auto *apiKeyRow = new QHBoxLayout();
-	apiKeyRow->addWidget(m_apiKeyEdit);
-	apiKeyRow->addWidget(m_apiKeyChangeButton);
-	form->addRow(tr("API Key:"), apiKeyRow);
-
-	m_maxLineCharsSpin = new QSpinBox(this);
+	m_maxLineCharsSpin = new QSpinBox(content);
 	m_maxLineCharsSpin->setRange(20, 200);
 	m_maxLineCharsSpin->setValue(m_maxLineChars);
 	m_maxLineCharsSpin->setToolTip(
@@ -162,17 +204,17 @@ void CaptionsDock::buildUi()
 
 	layout->addLayout(form);
 
-	m_startStopButton = new QPushButton(tr("Start"), this);
+	m_startStopButton = new QPushButton(tr("Start"), content);
 	connect(m_startStopButton, &QPushButton::clicked, this, &CaptionsDock::onStartStopClicked);
 	layout->addWidget(m_startStopButton);
 
-	m_statusLabel = new QLabel(this);
+	m_statusLabel = new QLabel(content);
 	m_statusLabel->setWordWrap(true);
 	layout->addWidget(m_statusLabel);
 
 	auto *levelRow = new QHBoxLayout();
-	levelRow->addWidget(new QLabel(tr("Audio level:"), this));
-	m_levelMeter = new QProgressBar(this);
+	levelRow->addWidget(new QLabel(tr("Audio level:"), content));
+	m_levelMeter = new QProgressBar(content);
 	m_levelMeter->setRange(0, 100);
 	m_levelMeter->setValue(0);
 	m_levelMeter->setTextVisible(false);
@@ -181,8 +223,8 @@ void CaptionsDock::buildUi()
 
 	auto *captionGroup = new QVBoxLayout();
 	captionGroup->setSpacing(2);
-	captionGroup->addWidget(new QLabel(tr("Live captions:"), this));
-	m_captionPreview = new QPlainTextEdit(this);
+	captionGroup->addWidget(new QLabel(tr("Live captions:"), content));
+	m_captionPreview = new QPlainTextEdit(content);
 	m_captionPreview->setReadOnly(true);
 	m_captionPreview->setMaximumBlockCount(kMaxPreviewLines);
 	m_captionPreview->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
@@ -191,9 +233,10 @@ void CaptionsDock::buildUi()
 	layout->addLayout(captionGroup);
 
 	auto *creditLabel = new QLabel(
-		tr("<a href=\"https://github.com/MehdiSheriff05\">Soniox Live Captions Plugin</a> v%1")
+		tr("<a href=\"https://github.com/MehdiSheriff05/obs-soniox-subs/releases\">"
+		   "Soniox Live Captions Plugin v%1</a>")
 			.arg(QString::fromUtf8(PLUGIN_VERSION)),
-		this);
+		content);
 	creditLabel->setAlignment(Qt::AlignCenter);
 	creditLabel->setStyleSheet(QStringLiteral("color: gray; font-size: 10px;"));
 	creditLabel->setTextFormat(Qt::RichText);
@@ -203,9 +246,116 @@ void CaptionsDock::buildUi()
 
 	layout->addStretch(1);
 
-	scrollArea->setWidget(content);
-	outerLayout->addWidget(scrollArea);
-	setLayout(outerLayout);
+	return content;
+}
+
+QWidget *CaptionsDock::buildStatsTab()
+{
+	auto *content = new QWidget();
+	auto *layout = new QVBoxLayout(content);
+
+	auto *form = new QFormLayout();
+
+	m_elapsedTimeLabel = new QLabel(tr("00:00:00"), content);
+	form->addRow(tr("Elapsed time:"), m_elapsedTimeLabel);
+
+	m_sessionCostLabel = new QLabel(tr("$0.0000"), content);
+	m_sessionCostLabel->setToolTip(tr("Estimated using Soniox's published real-time rate ($%1/hour, "
+					   "translation included). This is an estimate for your own awareness, "
+					   "not an exact bill — actual Soniox billing is token-based.")
+						.arg(kEstimatedCostPerHour, 0, 'f', 2));
+	form->addRow(tr("Estimated cost:"), m_sessionCostLabel);
+
+	m_reconnectCountLabel = new QLabel(tr("0"), content);
+	m_reconnectCountLabel->setToolTip(tr("How many times the connection to Soniox dropped and had to retry "
+					      "during this session — a high count may indicate a shaky network."));
+	form->addRow(tr("Reconnects:"), m_reconnectCountLabel);
+
+	layout->addLayout(form);
+	layout->addStretch(1);
+
+	return content;
+}
+
+QWidget *CaptionsDock::buildSettingsTab()
+{
+	auto *content = new QWidget();
+	auto *layout = new QVBoxLayout(content);
+
+	auto *form = new QFormLayout();
+
+	m_apiKeyEdit = new QLineEdit(content);
+	m_apiKeyEdit->setEchoMode(QLineEdit::Password);
+	m_apiKeyEdit->setPlaceholderText(tr("Soniox API key"));
+
+	m_apiKeyChangeButton = new QPushButton(tr("Change"), content);
+	m_apiKeyChangeButton->setVisible(false);
+	connect(m_apiKeyChangeButton, &QPushButton::clicked, this, &CaptionsDock::onApiKeyChangeClicked);
+
+	auto *apiKeyRow = new QHBoxLayout();
+	apiKeyRow->addWidget(m_apiKeyEdit);
+	apiKeyRow->addWidget(m_apiKeyChangeButton);
+	form->addRow(tr("API Key:"), apiKeyRow);
+
+	layout->addLayout(form);
+
+	m_checkUpdatesButton = new QPushButton(tr("Check for Updates"), content);
+	connect(m_checkUpdatesButton, &QPushButton::clicked, this, &CaptionsDock::onCheckForUpdatesClicked);
+	layout->addWidget(m_checkUpdatesButton);
+
+	m_updateStatusLabel = new QLabel(tr("Checking for updates..."), content);
+	m_updateStatusLabel->setWordWrap(true);
+	layout->addWidget(m_updateStatusLabel);
+
+	layout->addStretch(1);
+
+	return content;
+}
+
+QWidget *CaptionsDock::buildAppearanceTab()
+{
+	auto *content = new QWidget();
+	auto *layout = new QVBoxLayout(content);
+
+	auto *form = new QFormLayout();
+	m_fontComboBox = new QFontComboBox(content);
+	m_fontComboBox->setCurrentFont(QFont(QStringLiteral("Poppins")));
+	m_fontComboBox->setToolTip(tr("Only takes effect if this font is actually installed on this computer — "
+				       "Poppins is a Google font, not preinstalled on macOS or Windows."));
+	connect(m_fontComboBox, &QFontComboBox::currentFontChanged, this, &CaptionsDock::onAppearanceSettingChanged);
+	form->addRow(tr("Font:"), m_fontComboBox);
+	layout->addLayout(form);
+
+	m_outlineCheckBox = new QCheckBox(tr("Show text outline / border"), content);
+	m_outlineCheckBox->setChecked(true);
+#if defined(_WIN32)
+	m_outlineCheckBox->setToolTip(tr("Draws a black outline around the caption text."));
+#else
+	m_outlineCheckBox->setToolTip(tr("On macOS/Linux this softens the text edge rather than drawing a distinct "
+					  "black outline — OBS's text source here has no separate outline color, "
+					  "unlike the Windows version of this plugin."));
+#endif
+	connect(m_outlineCheckBox, &QCheckBox::toggled, this, &CaptionsDock::onAppearanceSettingChanged);
+	layout->addWidget(m_outlineCheckBox);
+
+#if defined(_WIN32)
+	m_backgroundCheckBox = new QCheckBox(tr("Translucent background behind text"), content);
+	m_backgroundCheckBox->setChecked(false);
+	connect(m_backgroundCheckBox, &QCheckBox::toggled, this, &CaptionsDock::onAppearanceSettingChanged);
+	layout->addWidget(m_backgroundCheckBox);
+#else
+	auto *backgroundNoteLabel = new QLabel(
+		tr("A translucent background box isn't available on macOS/Linux — OBS's text source here has no "
+		   "background-box property (the Windows version of this plugin's text source does)."),
+		content);
+	backgroundNoteLabel->setWordWrap(true);
+	backgroundNoteLabel->setStyleSheet(QStringLiteral("color: gray; font-size: 10px;"));
+	layout->addWidget(backgroundNoteLabel);
+#endif
+
+	layout->addStretch(1);
+
+	return content;
 }
 
 void CaptionsDock::refreshSourceList()
@@ -243,6 +393,20 @@ void CaptionsDock::loadSettings()
 		m_maxLineChars = static_cast<int>(maxLineChars);
 		m_maxLineCharsSpin->setValue(m_maxLineChars);
 	}
+
+	if (config_has_user_value(config, "SonioxCaptions", "FontFace")) {
+		const char *fontFace = config_get_string(config, "SonioxCaptions", "FontFace");
+		if (fontFace && *fontFace)
+			m_fontComboBox->setCurrentFont(QFont(QString::fromUtf8(fontFace)));
+	}
+
+	if (config_has_user_value(config, "SonioxCaptions", "OutlineEnabled"))
+		m_outlineCheckBox->setChecked(config_get_bool(config, "SonioxCaptions", "OutlineEnabled"));
+
+#if defined(_WIN32)
+	if (config_has_user_value(config, "SonioxCaptions", "BackgroundEnabled"))
+		m_backgroundCheckBox->setChecked(config_get_bool(config, "SonioxCaptions", "BackgroundEnabled"));
+#endif
 }
 
 void CaptionsDock::saveSettings()
@@ -272,12 +436,29 @@ void CaptionsDock::onMaxLineCharsChanged(int value)
 	}
 }
 
+void CaptionsDock::onAppearanceSettingChanged()
+{
+	applyCaptionStyleSettings();
+
+	config_t *config = obs_frontend_get_user_config();
+	if (config) {
+		config_set_string(config, "SonioxCaptions", "FontFace",
+				   m_fontComboBox->currentFont().family().toUtf8().constData());
+		config_set_bool(config, "SonioxCaptions", "OutlineEnabled", m_outlineCheckBox->isChecked());
+#if defined(_WIN32)
+		config_set_bool(config, "SonioxCaptions", "BackgroundEnabled", m_backgroundCheckBox->isChecked());
+#endif
+		config_save(config);
+	}
+}
+
 void CaptionsDock::onStartStopClicked()
 {
 	if (m_running) {
 		m_sonioxClient.stop();
 		m_audioBridge.stop();
 		m_watchdogTimer->stop();
+		m_statsTimer->stop();
 		clearCaptionText();
 		setRunningUiState(false);
 		setStatusText(tr("Idle"));
@@ -317,6 +498,13 @@ void CaptionsDock::onStartStopClicked()
 
 	m_noAudioWarned = false;
 	m_watchdogTimer->start();
+
+	m_reconnectCount = 0;
+	m_reconnectCountLabel->setText(QStringLiteral("0"));
+	m_sessionElapsedTimer.start();
+	m_elapsedTimeLabel->setText(formatElapsed(0));
+	m_sessionCostLabel->setText(tr("$0.0000"));
+	m_statsTimer->start();
 
 	setRunningUiState(true);
 	setStatusText(tr("Connecting..."));
@@ -400,16 +588,20 @@ void CaptionsDock::onSonioxStatusChanged(SonioxClient::Status status)
 		break;
 	case SonioxClient::Status::Reconnecting:
 		setStatusText(tr("Connection lost, retrying..."));
+		m_reconnectCount++;
+		m_reconnectCountLabel->setText(QString::number(m_reconnectCount));
 		break;
 	case SonioxClient::Status::AuthError:
 		setStatusText(tr("Invalid API key"), tr("Authentication failed. Check the Soniox API key."));
 		m_watchdogTimer->stop();
+		m_statsTimer->stop();
 		m_audioBridge.stop();
 		setRunningUiState(false);
 		break;
 	case SonioxClient::Status::Disconnected:
 		if (m_running) {
 			m_watchdogTimer->stop();
+			m_statsTimer->stop();
 			m_audioBridge.stop();
 			setRunningUiState(false);
 			setStatusText(tr("Idle"));
@@ -438,6 +630,109 @@ void CaptionsDock::onWatchdogTick()
 	} else {
 		m_noAudioWarned = false;
 	}
+}
+
+void CaptionsDock::onStatsTick()
+{
+	qint64 elapsedMs = m_sessionElapsedTimer.elapsed();
+	m_elapsedTimeLabel->setText(formatElapsed(elapsedMs));
+
+	double estimatedCost = (static_cast<double>(elapsedMs) / 3600000.0) * kEstimatedCostPerHour;
+	m_sessionCostLabel->setText(QStringLiteral("$%1").arg(estimatedCost, 0, 'f', 4));
+}
+
+void CaptionsDock::onCheckForUpdatesClicked()
+{
+	m_checkUpdatesButton->setEnabled(false);
+	m_updateStatusLabel->setText(tr("Checking for updates..."));
+	m_updateChecker.checkForUpdate();
+}
+
+void CaptionsDock::onUpdateAvailable(const QString &newVersion)
+{
+	m_checkUpdatesButton->setEnabled(true);
+
+	QString message = tr("Update available: v%1").arg(newVersion);
+	m_updateStatusLabel->setText(message);
+
+	m_updateBannerLabel->setText(message);
+	m_updateBannerLabel->setVisible(true);
+	m_updateInstallButton->setVisible(true);
+	m_updateInstallButton->setEnabled(true);
+}
+
+void CaptionsDock::onUpdateUpToDate()
+{
+	m_checkUpdatesButton->setEnabled(true);
+	m_updateStatusLabel->setText(tr("You're up to date (v%1)").arg(QString::fromUtf8(PLUGIN_VERSION)));
+	m_updateBannerLabel->setVisible(false);
+	m_updateInstallButton->setVisible(false);
+}
+
+void CaptionsDock::onUpdateCheckFailed(const QString &plainMessage, const QString &technicalDetail)
+{
+	m_checkUpdatesButton->setEnabled(true);
+	m_updateStatusLabel->setText(plainMessage);
+	m_updateStatusLabel->setToolTip(technicalDetail);
+	m_updateBannerLabel->setVisible(false);
+	m_updateInstallButton->setVisible(false);
+}
+
+void CaptionsDock::onInstallUpdateClicked()
+{
+	m_updateInstallButton->setEnabled(false);
+	m_updateChecker.downloadAndLaunchInstaller();
+}
+
+void CaptionsDock::onUpdateDownloadStarted()
+{
+	m_updateBannerLabel->setText(tr("Downloading update..."));
+}
+
+void CaptionsDock::onInstallerLaunched()
+{
+	m_updateBannerLabel->setText(tr("Installer launched — finish the install, then restart OBS."));
+	m_updateInstallButton->setVisible(false);
+}
+
+void CaptionsDock::onUpdateDownloadFailed(const QString &plainMessage, const QString &technicalDetail)
+{
+	m_updateBannerLabel->setText(plainMessage);
+	m_updateBannerLabel->setToolTip(technicalDetail);
+	m_updateInstallButton->setEnabled(true);
+}
+
+void CaptionsDock::applyCaptionStyleSettings()
+{
+	if (!m_captionTextSource)
+		return;
+
+	obs_data_t *styleSettings = obs_data_create();
+
+	obs_data_t *fontSettings = obs_data_create();
+	obs_data_set_string(fontSettings, "face", m_fontComboBox->currentFont().family().toUtf8().constData());
+	obs_data_set_obj(styleSettings, "font", fontSettings);
+	obs_data_release(fontSettings);
+
+	// A black stroke/outline is only genuinely possible on Windows
+	// (text_gdiplus has real outline_color/bk_color/bk_opacity settings).
+	// text_ft2_source (macOS/Linux) has no background-box property at all,
+	// and its "outline" toggle just redraws the same glyph texture offset in
+	// 8 directions — a same-color blur, not a distinct black stroke. There's
+	// no settings-level way around that; a true cross-platform stroke would
+	// need rendering captions via a browser source instead of this native
+	// text source.
+	obs_data_set_bool(styleSettings, "outline", m_outlineCheckBox->isChecked());
+#if defined(_WIN32)
+	obs_data_set_int(styleSettings, "outline_color", 0x00000000);
+	obs_data_set_int(styleSettings, "outline_size", 3);
+	obs_data_set_int(styleSettings, "outline_opacity", 100);
+	obs_data_set_int(styleSettings, "bk_color", 0x00000000);
+	obs_data_set_int(styleSettings, "bk_opacity", m_backgroundCheckBox->isChecked() ? 60 : 0);
+#endif
+
+	obs_source_update(m_captionTextSource, styleSettings);
+	obs_data_release(styleSettings);
 }
 
 void CaptionsDock::ensureCaptionTextSource()
@@ -472,6 +767,8 @@ void CaptionsDock::ensureCaptionTextSource()
 	obs_data_set_int(sizingSettings, "custom_width", 0);
 	obs_source_update(m_captionTextSource, sizingSettings);
 	obs_data_release(sizingSettings);
+
+	applyCaptionStyleSettings();
 
 	obs_source_t *sceneSource = obs_frontend_get_current_scene();
 	if (!sceneSource)
@@ -519,4 +816,3 @@ void CaptionsDock::clearCaptionText()
 
 	updateCaptionTextSource("");
 }
-

@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { font: 13px -apple-system, Helvetica, sans-serif; margin: 0; padding: 0; }
+  code { font: 12px Menlo, monospace; background: #f0f0f0; padding: 1px 4px; border-radius: 3px; }
+</style>
+</head>
+<body>
+<p>@CMAKE_PROJECT_NAME@ was installed to:</p>
+<p><code>~/Library/Application Support/obs-studio/plugins/@CMAKE_PROJECT_NAME@.plugin</code></p>
+<p>Restart OBS, then enable the dock from the Docks menu.</p>
+</body>
+</html>
