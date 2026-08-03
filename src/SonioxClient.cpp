@@ -58,9 +58,9 @@ void SonioxClient::setApiKey(const QString &apiKey)
 	m_apiKey = apiKey;
 }
 
-void SonioxClient::setLanguages(const QString &sourceLanguageHint, const QString &targetLanguage)
+void SonioxClient::setLanguages(const QStringList &sourceLanguageHints, const QString &targetLanguage)
 {
-	m_sourceLanguageHint = sourceLanguageHint;
+	m_sourceLanguageHints = sourceLanguageHints;
 	m_targetLanguage = targetLanguage;
 }
 
@@ -81,18 +81,25 @@ QByteArray SonioxClient::buildConfigMessage() const
 	translation["type"] = QStringLiteral("one_way");
 	translation["target_language"] = m_targetLanguage;
 
-	QJsonArray hints;
-	hints.append(m_sourceLanguageHint);
-
 	QJsonObject config;
 	config["api_key"] = m_apiKey;
 	config["model"] = QStringLiteral("stt-rt-v5");
 	config["audio_format"] = QStringLiteral("s16le");
 	config["sample_rate"] = 16000;
 	config["num_channels"] = 1;
-	config["language_hints"] = hints;
 	config["enable_endpoint_detection"] = true;
 	config["translation"] = translation;
+
+	// Empty hints means "auto-detect" -- omit the key entirely rather than
+	// send an empty array, so Soniox identifies the spoken language itself
+	// instead of being constrained to a hint list. Useful when a speaker
+	// switches languages mid-session (e.g. Urdu to Arabic).
+	if (!m_sourceLanguageHints.isEmpty()) {
+		QJsonArray hints;
+		for (const QString &hint : m_sourceLanguageHints)
+			hints.append(hint);
+		config["language_hints"] = hints;
+	}
 
 	return QJsonDocument(config).toJson(QJsonDocument::Compact);
 }

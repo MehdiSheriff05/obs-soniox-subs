@@ -162,7 +162,6 @@ void CaptionsDock::buildUi()
 	m_tabWidget->addTab(wrapInScrollArea(buildCaptionsTab()), tr("Captions"));
 	m_tabWidget->addTab(wrapInScrollArea(buildStatsTab()), tr("Stats"));
 	m_tabWidget->addTab(wrapInScrollArea(buildSettingsTab()), tr("Settings"));
-	m_tabWidget->addTab(wrapInScrollArea(buildAppearanceTab()), tr("Appearance"));
 
 	outerLayout->addWidget(m_tabWidget);
 	setLayout(outerLayout);
@@ -297,7 +296,59 @@ QWidget *CaptionsDock::buildSettingsTab()
 	apiKeyRow->addWidget(m_apiKeyChangeButton);
 	form->addRow(tr("API Key:"), apiKeyRow);
 
+	m_speechLanguageCombo = new QComboBox(content);
+	m_speechLanguageCombo->setEditable(true);
+	m_speechLanguageCombo->setToolTip(
+		tr("The language being spoken. Auto-detect is recommended if the speaker switches languages "
+		   "mid-session (e.g. Urdu to Arabic) — Soniox identifies the spoken language itself instead of "
+		   "being locked to one. You can also type any Soniox-supported language code directly."));
+	m_speechLanguageCombo->addItem(tr("Auto-detect (any language)"), QString());
+	m_speechLanguageCombo->addItem(tr("Arabic"), QStringLiteral("ar"));
+	m_speechLanguageCombo->addItem(tr("Urdu"), QStringLiteral("ur"));
+	m_speechLanguageCombo->addItem(tr("Urdu + Arabic (mixed)"), QStringLiteral("ur,ar"));
+	m_speechLanguageCombo->addItem(tr("English"), QStringLiteral("en"));
+	m_speechLanguageCombo->addItem(tr("French"), QStringLiteral("fr"));
+	m_speechLanguageCombo->addItem(tr("Bengali"), QStringLiteral("bn"));
+	m_speechLanguageCombo->addItem(tr("Hindi"), QStringLiteral("hi"));
+	m_speechLanguageCombo->addItem(tr("Punjabi"), QStringLiteral("pa"));
+	m_speechLanguageCombo->addItem(tr("Pashto"), QStringLiteral("ps"));
+	m_speechLanguageCombo->addItem(tr("Persian/Farsi"), QStringLiteral("fa"));
+	m_speechLanguageCombo->addItem(tr("Turkish"), QStringLiteral("tr"));
+	m_speechLanguageCombo->addItem(tr("Indonesian"), QStringLiteral("id"));
+	m_speechLanguageCombo->addItem(tr("Malay"), QStringLiteral("ms"));
+	m_speechLanguageCombo->addItem(tr("Somali"), QStringLiteral("so"));
+	form->addRow(tr("Speech language:"), m_speechLanguageCombo);
+
+	m_captionLanguageCombo = new QComboBox(content);
+	m_captionLanguageCombo->setEditable(true);
+	m_captionLanguageCombo->setToolTip(
+		tr("The language captions are translated into. You can also type any Soniox-supported language "
+		   "code directly."));
+	m_captionLanguageCombo->addItem(tr("English"), QStringLiteral("en"));
+	m_captionLanguageCombo->addItem(tr("French"), QStringLiteral("fr"));
+	m_captionLanguageCombo->addItem(tr("Arabic"), QStringLiteral("ar"));
+	m_captionLanguageCombo->addItem(tr("Urdu"), QStringLiteral("ur"));
+	m_captionLanguageCombo->addItem(tr("Bengali"), QStringLiteral("bn"));
+	m_captionLanguageCombo->addItem(tr("Hindi"), QStringLiteral("hi"));
+	m_captionLanguageCombo->addItem(tr("Spanish"), QStringLiteral("es"));
+	m_captionLanguageCombo->addItem(tr("German"), QStringLiteral("de"));
+	m_captionLanguageCombo->addItem(tr("Turkish"), QStringLiteral("tr"));
+	m_captionLanguageCombo->addItem(tr("Indonesian"), QStringLiteral("id"));
+	form->addRow(tr("Caption language:"), m_captionLanguageCombo);
+
+	m_fontComboBox = new QFontComboBox(content);
+	m_fontComboBox->setCurrentFont(QFont(QStringLiteral("Poppins")));
+	m_fontComboBox->setToolTip(tr("Only takes effect if this font is actually installed on this computer — "
+				       "Poppins is a Google font, not preinstalled on macOS or Windows."));
+	connect(m_fontComboBox, &QFontComboBox::currentFontChanged, this, &CaptionsDock::onAppearanceSettingChanged);
+	form->addRow(tr("Font:"), m_fontComboBox);
+
 	layout->addLayout(form);
+
+	m_outlineCheckBox = new QCheckBox(tr("Show text outline / border"), content);
+	m_outlineCheckBox->setChecked(true);
+	connect(m_outlineCheckBox, &QCheckBox::toggled, this, &CaptionsDock::onAppearanceSettingChanged);
+	layout->addWidget(m_outlineCheckBox);
 
 	m_checkUpdatesButton = new QPushButton(tr("Check for Updates"), content);
 	connect(m_checkUpdatesButton, &QPushButton::clicked, this, &CaptionsDock::onCheckForUpdatesClicked);
@@ -306,30 +357,6 @@ QWidget *CaptionsDock::buildSettingsTab()
 	m_updateStatusLabel = new QLabel(tr("Checking for updates..."), content);
 	m_updateStatusLabel->setWordWrap(true);
 	layout->addWidget(m_updateStatusLabel);
-
-	layout->addStretch(1);
-
-	return content;
-}
-
-QWidget *CaptionsDock::buildAppearanceTab()
-{
-	auto *content = new QWidget();
-	auto *layout = new QVBoxLayout(content);
-
-	auto *form = new QFormLayout();
-	m_fontComboBox = new QFontComboBox(content);
-	m_fontComboBox->setCurrentFont(QFont(QStringLiteral("Poppins")));
-	m_fontComboBox->setToolTip(tr("Only takes effect if this font is actually installed on this computer — "
-				       "Poppins is a Google font, not preinstalled on macOS or Windows."));
-	connect(m_fontComboBox, &QFontComboBox::currentFontChanged, this, &CaptionsDock::onAppearanceSettingChanged);
-	form->addRow(tr("Font:"), m_fontComboBox);
-	layout->addLayout(form);
-
-	m_outlineCheckBox = new QCheckBox(tr("Show text outline / border"), content);
-	m_outlineCheckBox->setChecked(true);
-	connect(m_outlineCheckBox, &QCheckBox::toggled, this, &CaptionsDock::onAppearanceSettingChanged);
-	layout->addWidget(m_outlineCheckBox);
 
 	layout->addStretch(1);
 
@@ -372,6 +399,18 @@ void CaptionsDock::loadSettings()
 		m_maxLineCharsSpin->setValue(m_maxLineChars);
 	}
 
+	if (config_has_user_value(config, "SonioxCaptions", "SpeechLanguage")) {
+		const char *speechLanguage = config_get_string(config, "SonioxCaptions", "SpeechLanguage");
+		if (speechLanguage)
+			setLanguageComboValue(m_speechLanguageCombo, QString::fromUtf8(speechLanguage));
+	}
+
+	if (config_has_user_value(config, "SonioxCaptions", "CaptionLanguage")) {
+		const char *captionLanguage = config_get_string(config, "SonioxCaptions", "CaptionLanguage");
+		if (captionLanguage && *captionLanguage)
+			setLanguageComboValue(m_captionLanguageCombo, QString::fromUtf8(captionLanguage));
+	}
+
 	if (config_has_user_value(config, "SonioxCaptions", "FontFace")) {
 		const char *fontFace = config_get_string(config, "SonioxCaptions", "FontFace");
 		if (fontFace && *fontFace)
@@ -392,6 +431,10 @@ void CaptionsDock::saveSettings()
 	config_set_string(config, "SonioxCaptions", "AudioSource",
 			   m_sourceCombo->currentText().toUtf8().constData());
 	config_set_int(config, "SonioxCaptions", "MaxLineChars", m_maxLineChars);
+	config_set_string(config, "SonioxCaptions", "SpeechLanguage",
+			   languageComboValue(m_speechLanguageCombo).toUtf8().constData());
+	config_set_string(config, "SonioxCaptions", "CaptionLanguage",
+			   languageComboValue(m_captionLanguageCombo).toUtf8().constData());
 	config_save(config);
 }
 
@@ -462,8 +505,13 @@ void CaptionsDock::onStartStopClicked()
 	m_lastFinalizedText.clear();
 	m_captionPreview->clear();
 
+	QString speechLanguage = languageComboValue(m_speechLanguageCombo);
+	QStringList speechLanguageHints =
+		speechLanguage.isEmpty() ? QStringList{} : speechLanguage.split(QLatin1Char(','), Qt::SkipEmptyParts);
+	QString captionLanguage = languageComboValue(m_captionLanguageCombo);
+
 	m_sonioxClient.setApiKey(apiKey);
-	m_sonioxClient.setLanguages(QStringLiteral("ur"), QStringLiteral("en"));
+	m_sonioxClient.setLanguages(speechLanguageHints, captionLanguage);
 	m_sonioxClient.start();
 
 	m_noAudioWarned = false;
@@ -488,6 +536,27 @@ void CaptionsDock::setRunningUiState(bool running)
 	m_refreshSourcesButton->setEnabled(!running);
 	m_apiKeyEdit->setEnabled(!running);
 	m_apiKeyChangeButton->setEnabled(!running);
+	m_speechLanguageCombo->setEnabled(!running);
+	m_captionLanguageCombo->setEnabled(!running);
+}
+
+QString CaptionsDock::languageComboValue(const QComboBox *combo)
+{
+	QVariant data = combo->currentData();
+	if (data.isValid())
+		return data.toString();
+
+	// Typed a custom entry not in the list — use it as a raw language code.
+	return combo->currentText().trimmed();
+}
+
+void CaptionsDock::setLanguageComboValue(QComboBox *combo, const QString &value)
+{
+	int idx = combo->findData(value);
+	if (idx >= 0)
+		combo->setCurrentIndex(idx);
+	else
+		combo->setCurrentText(value);
 }
 
 void CaptionsDock::setApiKeyLocked(bool locked)

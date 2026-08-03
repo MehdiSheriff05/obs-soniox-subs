@@ -1,10 +1,12 @@
 # Live Captions (Soniox) — OBS Plugin
 
-An OBS Studio plugin that shows live Urdu -> English translated captions
-during mosque livestreams, powered by [Soniox](https://soniox.com)'s
-real-time speech-to-text translation API. Built for a non-technical
-volunteer operator: a single dock, split into four tabs so the everyday
-controls stay uncluttered:
+An OBS Studio plugin that shows live translated captions during mosque
+livestreams, powered by [Soniox](https://soniox.com)'s real-time
+speech-to-text translation API. Originally built for Urdu -> English, but
+both the spoken language and the caption language are configurable — e.g.
+transcribing French and captioning in Urdu works just as well. Built for a
+non-technical volunteer operator: a single dock, split into three tabs so
+the everyday controls stay uncluttered:
 
 - **Captions** — audio source picker, max caption length, Start/Stop, a
   live caption preview, an audio input level meter, and plain-language
@@ -12,9 +14,9 @@ controls stay uncluttered:
   you need for day-to-day use.
 - **Stats** — elapsed session time, an estimated cost for the session, and
   a reconnect counter (a rising count usually means a shaky network).
-- **Settings** — the Soniox API key, and a **Check for Updates** button.
-- **Appearance** — font and an outline/border toggle for the on-screen
-  caption text (the same settings are applied on both macOS and Windows).
+- **Settings** — Soniox API key, speech/caption language pickers, caption
+  font and outline/border toggle, and a **Check for Updates** button. Set
+  once per setup, rarely touched during a live session.
 
 Created by [Mehdi Sheriff](https://github.com/MehdiSheriff05).
 
@@ -42,18 +44,23 @@ needs manual end-to-end verification.
   not a real bill (actual Soniox billing is token-based) and it is not your
   account balance. Check your Soniox account's own usage/quota page
   independently for that.
-- The **Appearance** tab's outline toggle sends the same request on both
-  platforms, but OBS's two text source implementations render it
-  differently: `text_gdiplus` (Windows) draws a real black stroke;
-  `text_ft2_source` (macOS/Linux) has no separate outline color, so it just
-  softens the text edge instead. That's a difference in OBS's own text
-  sources, not something this plugin's settings can paper over. A
-  translucent background box was considered but dropped — it only exists
-  on Windows' text source at all, and this plugin only ships features that
-  behave the same on both platforms.
+- The outline toggle sends the same request on both platforms, but OBS's
+  two text source implementations render it differently: `text_gdiplus`
+  (Windows) draws a real black stroke; `text_ft2_source` (macOS/Linux) has
+  no separate outline color, so it just softens the text edge instead.
+  That's a difference in OBS's own text sources, not something this
+  plugin's settings can paper over. A translucent background box was
+  considered but dropped — it only exists on Windows' text source at all,
+  and this plugin only ships features that behave the same on both
+  platforms.
 - The font picker only takes effect if the chosen font is actually
   installed on the machine running OBS — e.g. the default, **Poppins**, is
   a Google font not preinstalled on macOS or Windows.
+- The speech-language dropdown includes an **Auto-detect** option (useful
+  if a speaker switches languages mid-lecture, e.g. Urdu to Arabic) and a
+  curated list of common languages, but you can type any Soniox-supported
+  language code directly into either the speech- or caption-language box —
+  they're editable, not locked to the presets.
 
 ## Installation
 

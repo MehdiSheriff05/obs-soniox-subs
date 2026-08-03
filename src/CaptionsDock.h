@@ -72,7 +72,6 @@ private:
 	QWidget *buildCaptionsTab();
 	QWidget *buildStatsTab();
 	QWidget *buildSettingsTab();
-	QWidget *buildAppearanceTab();
 	static QWidget *wrapInScrollArea(QWidget *content);
 	void refreshSourceList();
 	void loadSettings();
@@ -86,12 +85,16 @@ private:
 	void clearCaptionText();
 	void updatePreviewCurrentLine(const QString &text);
 	static void frontendEventCallback(enum obs_frontend_event event, void *privateData);
+	static QString languageComboValue(const QComboBox *combo);
+	static void setLanguageComboValue(QComboBox *combo, const QString &value);
 
 	QTabWidget *m_tabWidget = nullptr;
 
 	// Captions tab
 	QComboBox *m_sourceCombo = nullptr;
 	QPushButton *m_refreshSourcesButton = nullptr;
+	QComboBox *m_speechLanguageCombo = nullptr;
+	QComboBox *m_captionLanguageCombo = nullptr;
 	QSpinBox *m_maxLineCharsSpin = nullptr;
 	QPushButton *m_startStopButton = nullptr;
 	QLabel *m_statusLabel = nullptr;

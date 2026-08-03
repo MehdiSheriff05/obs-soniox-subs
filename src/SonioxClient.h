@@ -20,6 +20,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <QObject>
 #include <QString>
+#include <QStringList>
 #include <QByteArray>
 
 #include <cstddef>
@@ -49,7 +50,10 @@ public:
 	~SonioxClient() override;
 
 	void setApiKey(const QString &apiKey);
-	void setLanguages(const QString &sourceLanguageHint, const QString &targetLanguage);
+	// Empty sourceLanguageHints means "auto-detect" — no language_hints key
+	// is sent at all, letting Soniox identify the spoken language itself
+	// (useful when a speaker switches languages mid-session).
+	void setLanguages(const QStringList &sourceLanguageHints, const QString &targetLanguage);
 
 	void start();
 	void stop();
@@ -79,7 +83,7 @@ private:
 	QTimer *m_reconnectTimer = nullptr;
 
 	QString m_apiKey;
-	QString m_sourceLanguageHint = QStringLiteral("ur");
+	QStringList m_sourceLanguageHints = {QStringLiteral("ur")};
 	QString m_targetLanguage = QStringLiteral("en");
 
 	Status m_status = Status::Disconnected;
