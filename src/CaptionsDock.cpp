@@ -343,6 +343,14 @@ QWidget *CaptionsDock::buildSettingsTab()
 	connect(m_fontComboBox, &QFontComboBox::currentFontChanged, this, &CaptionsDock::onAppearanceSettingChanged);
 	form->addRow(tr("Font:"), m_fontComboBox);
 
+	m_fontSizeSpin = new QSpinBox(content);
+	m_fontSizeSpin->setRange(12, 200);
+	m_fontSizeSpin->setValue(48);
+	m_fontSizeSpin->setSuffix(tr(" px"));
+	connect(m_fontSizeSpin, QOverload<int>::of(&QSpinBox::valueChanged), this,
+		&CaptionsDock::onAppearanceSettingChanged);
+	form->addRow(tr("Font size:"), m_fontSizeSpin);
+
 	layout->addLayout(form);
 
 	m_outlineCheckBox = new QCheckBox(tr("Show text outline / border"), content);
@@ -419,6 +427,10 @@ void CaptionsDock::loadSettings()
 
 	if (config_has_user_value(config, "SonioxCaptions", "OutlineEnabled"))
 		m_outlineCheckBox->setChecked(config_get_bool(config, "SonioxCaptions", "OutlineEnabled"));
+
+	long long fontSize = config_get_int(config, "SonioxCaptions", "FontSize");
+	if (fontSize > 0)
+		m_fontSizeSpin->setValue(static_cast<int>(fontSize));
 }
 
 void CaptionsDock::saveSettings()
@@ -461,6 +473,7 @@ void CaptionsDock::onAppearanceSettingChanged()
 		config_set_string(config, "SonioxCaptions", "FontFace",
 				   m_fontComboBox->currentFont().family().toUtf8().constData());
 		config_set_bool(config, "SonioxCaptions", "OutlineEnabled", m_outlineCheckBox->isChecked());
+		config_set_int(config, "SonioxCaptions", "FontSize", m_fontSizeSpin->value());
 		config_save(config);
 	}
 }
@@ -750,7 +763,7 @@ void CaptionsDock::applyCaptionStyleSettings()
 
 	obs_data_t *fontSettings = obs_data_create();
 	obs_data_set_string(fontSettings, "face", m_fontComboBox->currentFont().family().toUtf8().constData());
-	obs_data_set_int(fontSettings, "size", 48);
+	obs_data_set_int(fontSettings, "size", m_fontSizeSpin->value());
 	obs_data_set_obj(styleSettings, "font", fontSettings);
 	obs_data_release(fontSettings);
 

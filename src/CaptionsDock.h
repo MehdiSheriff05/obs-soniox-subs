@@ -119,6 +119,7 @@ private:
 
 	// Appearance tab
 	QFontComboBox *m_fontComboBox = nullptr;
+	QSpinBox *m_fontSizeSpin = nullptr;
 	QCheckBox *m_outlineCheckBox = nullptr;
 
 	QTimer *m_watchdogTimer = nullptr;
