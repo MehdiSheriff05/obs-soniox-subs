@@ -446,7 +446,9 @@ void CaptionsDock::ensureCaptionTextSource()
 		return;
 
 	obs_video_info ovi;
-	uint32_t canvasWidth = obs_get_video_info(&ovi) ? ovi.base_width : 1920;
+	bool haveVideoInfo = obs_get_video_info(&ovi);
+	uint32_t canvasWidth = haveVideoInfo ? ovi.base_width : 1920;
+	uint32_t canvasHeight = haveVideoInfo ? ovi.base_height : 1080;
 
 	obs_source_t *existing = obs_get_source_by_name(kCaptionSourceName);
 	if (existing) {
@@ -458,12 +460,16 @@ void CaptionsDock::ensureCaptionTextSource()
 	if (!m_captionTextSource)
 		return;
 
-	// Applied unconditionally (not just at creation) so a source created by
-	// an earlier version of this plugin, before word-wrap was added, still
-	// gets bounded to the canvas width instead of running off-screen.
+	// text_ft2_source/text_gdiplus have no native center-align option, so a
+	// fixed-width word-wrapped box (the previous approach) always rendered
+	// text flush to its left edge — fine for a full line, but short captions
+	// looked stuck on the left instead of centered. Letting the source
+	// auto-size to its actual text extent and centering the scene item's
+	// anchor point below (which OBS keeps fixed as the source's width
+	// changes with each caption) achieves real centering instead.
 	obs_data_t *sizingSettings = obs_data_create();
-	obs_data_set_bool(sizingSettings, "word_wrap", true);
-	obs_data_set_int(sizingSettings, "custom_width", canvasWidth);
+	obs_data_set_bool(sizingSettings, "word_wrap", false);
+	obs_data_set_int(sizingSettings, "custom_width", 0);
 	obs_source_update(m_captionTextSource, sizingSettings);
 	obs_data_release(sizingSettings);
 
@@ -472,8 +478,25 @@ void CaptionsDock::ensureCaptionTextSource()
 		return;
 
 	obs_scene_t *scene = obs_scene_from_source(sceneSource);
-	if (scene && !obs_scene_find_source(scene, kCaptionSourceName))
-		obs_scene_add(scene, m_captionTextSource);
+	if (scene) {
+		obs_sceneitem_t *item = obs_scene_find_source(scene, kCaptionSourceName);
+		if (!item) {
+			obs_scene_add(scene, m_captionTextSource);
+			item = obs_scene_find_source(scene, kCaptionSourceName);
+		}
+
+		// Re-applied on every Start (not just first creation) so a source
+		// left over from an earlier plugin version, positioned for the old
+		// fixed-width left-aligned box, gets re-anchored to the new centered
+		// layout too.
+		if (item) {
+			obs_sceneitem_set_alignment(item, OBS_ALIGN_BOTTOM);
+			struct vec2 pos;
+			pos.x = static_cast<float>(canvasWidth) / 2.0f;
+			pos.y = static_cast<float>(canvasHeight) * 0.9f;
+			obs_sceneitem_set_pos(item, &pos);
+		}
+	}
 
 	obs_source_release(sceneSource);
 }
