@@ -31,6 +31,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QPlainTextEdit>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QSpinBox>
 #include <QTextBlock>
 #include <QTextCursor>
@@ -116,7 +117,16 @@ void CaptionsDock::frontendEventCallback(enum obs_frontend_event event, void *pr
 
 void CaptionsDock::buildUi()
 {
-	auto *layout = new QVBoxLayout(this);
+	auto *outerLayout = new QVBoxLayout(this);
+	outerLayout->setContentsMargins(0, 0, 0, 0);
+
+	auto *scrollArea = new QScrollArea(this);
+	scrollArea->setWidgetResizable(true);
+	scrollArea->setFrameShape(QFrame::NoFrame);
+	scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+
+	auto *content = new QWidget(scrollArea);
+	auto *layout = new QVBoxLayout(content);
 
 	auto *form = new QFormLayout();
 	m_sourceCombo = new QComboBox(this);
@@ -193,7 +203,9 @@ void CaptionsDock::buildUi()
 
 	layout->addStretch(1);
 
-	setLayout(layout);
+	scrollArea->setWidget(content);
+	outerLayout->addWidget(scrollArea);
+	setLayout(outerLayout);
 }
 
 void CaptionsDock::refreshSourceList()
