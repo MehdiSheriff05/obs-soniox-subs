@@ -15,8 +15,8 @@ the everyday controls stay uncluttered:
 - **Stats** — elapsed session time, an estimated cost for the session, and
   a reconnect counter (a rising count usually means a shaky network).
 - **Settings** — Soniox API key, speech/caption language pickers, caption
-  font and outline/border toggle, and a **Check for Updates** button. Set
-  once per setup, rarely touched during a live session.
+  font/size/outline controls, and a **Check for Updates** button. Set once
+  per setup, rarely touched during a live session.
 
 Created by [Mehdi Sheriff](https://github.com/MehdiSheriff05).
 
@@ -81,7 +81,8 @@ Download the build for your platform from the
 3. Restart OBS.
 4. Open the **Docks** menu (or **View > Docks** on older OBS versions) and
    check **Live Captions** to show the dock.
-5. Pick your audio source, enter your Soniox API key, and press **Start**.
+5. On the **Settings** tab, enter your Soniox API key. Back on the
+   **Captions** tab, pick your audio source and press **Start**.
 
 ### Windows
 
@@ -102,7 +103,8 @@ Either way, then:
 1. Restart OBS.
 2. Open the **Docks** menu (or **View > Docks** on older OBS versions) and
    check **Live Captions** to show the dock.
-3. Pick your audio source, enter your Soniox API key, and press **Start**.
+3. On the **Settings** tab, enter your Soniox API key. Back on the
+   **Captions** tab, pick your audio source and press **Start**.
 
 ## Updating
 
