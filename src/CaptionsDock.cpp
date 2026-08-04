@@ -17,6 +17,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
 #include "CaptionsDock.h"
+#include "Localization.h"
 
 #include <obs-frontend-api.h>
 #include <obs-module.h>
@@ -24,12 +25,14 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <util/config-file.h>
 
 #include <QCheckBox>
+#include <QColorDialog>
 #include <QComboBox>
 #include <QFontComboBox>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QProgressBar>
 #include <QPushButton>
@@ -69,6 +72,23 @@ bool enumAudioSourceCallback(void *param, obs_source_t *source)
 	return true;
 }
 
+// OBS's own color properties (both text_freetype2's color1/color2 and
+// text_gdiplus's "color") pack channels as R in the lowest byte, then G,
+// then B, then A highest — the same convention OBS's own properties-view
+// color picker uses internally.
+long long colorToObsInt(const QColor &color)
+{
+	return static_cast<long long>((color.red() & 0xFF) | ((color.green() & 0xFF) << 8) |
+				       ((color.blue() & 0xFF) << 16) | (0xFFu << 24));
+}
+
+QColor colorFromObsInt(long long value)
+{
+	auto v = static_cast<uint32_t>(value);
+	return QColor(static_cast<int>(v & 0xFF), static_cast<int>((v >> 8) & 0xFF),
+		      static_cast<int>((v >> 16) & 0xFF));
+}
+
 QString formatElapsed(qint64 elapsedMs)
 {
 	qint64 totalSeconds = elapsedMs / 1000;
@@ -85,6 +105,15 @@ QString formatElapsed(qint64 elapsedMs)
 
 CaptionsDock::CaptionsDock(QWidget *parent) : QWidget(parent)
 {
+	// Just installs a translator instance if a language was already saved
+	// from a prior run — never blocks. The first-run picker itself can't
+	// run here: this constructor executes synchronously inside
+	// obs_module_load(), before OBS's main window exists, so a modal
+	// dialog at this point would sit invisibly blocking startup. It's
+	// deferred to OBS_FRONTEND_EVENT_FINISHED_LOADING in
+	// frontendEventCallback() instead, once the UI is actually on screen.
+	Localization::installTranslatorFromSavedLanguage();
+
 	buildUi();
 	refreshSourceList();
 	loadSettings();
@@ -141,6 +170,20 @@ void CaptionsDock::frontendEventCallback(enum obs_frontend_event event, void *pr
 
 	if (event == OBS_FRONTEND_EVENT_FINISHED_LOADING || event == OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGED)
 		self->refreshSourceList();
+
+	// Deferred here (rather than the constructor) because this event only
+	// fires once OBS's main window is actually up and showing — a modal
+	// dialog any earlier would block obs_module_load() invisibly. Guarded
+	// naturally by isFirstRun(): once a language is saved, it stays false.
+	if (event == OBS_FRONTEND_EVENT_FINISHED_LOADING && Localization::isFirstRun()) {
+		Localization::showFirstRunLanguageDialog(self);
+		if (Localization::savedLanguageCode() != QStringLiteral("en")) {
+			QMessageBox::information(
+				self, CaptionsDock::tr("Restart required"),
+				CaptionsDock::tr(
+					"The interface language has been changed. Restart OBS for it to take effect."));
+		}
+	}
 }
 
 QWidget *CaptionsDock::wrapInScrollArea(QWidget *content)
@@ -286,6 +329,16 @@ QWidget *CaptionsDock::buildSettingsTab()
 
 	auto *form = new QFormLayout();
 
+	m_uiLanguageCombo = new QComboBox(content);
+	m_uiLanguageCombo->addItem(tr("English"), QStringLiteral("en"));
+	m_uiLanguageCombo->addItem(tr("French"), QStringLiteral("fr"));
+	m_loadingUiLanguage = true;
+	setLanguageComboValue(m_uiLanguageCombo, Localization::savedLanguageCode());
+	m_loadingUiLanguage = false;
+	connect(m_uiLanguageCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+		&CaptionsDock::onUiLanguageChanged);
+	form->addRow(tr("Interface language:"), m_uiLanguageCombo);
+
 	m_apiKeyEdit = new QLineEdit(content);
 	m_apiKeyEdit->setEchoMode(QLineEdit::Password);
 	m_apiKeyEdit->setPlaceholderText(tr("Soniox API key"));
@@ -353,6 +406,12 @@ QWidget *CaptionsDock::buildSettingsTab()
 	connect(m_fontSizeSpin, QOverload<int>::of(&QSpinBox::valueChanged), this,
 		&CaptionsDock::onAppearanceSettingChanged);
 	form->addRow(tr("Font size:"), m_fontSizeSpin);
+
+	m_fontColorButton = new QPushButton(content);
+	m_fontColorButton->setFixedWidth(60);
+	m_fontColorButton->setStyleSheet(QStringLiteral("background-color: %1;").arg(m_fontColor.name()));
+	connect(m_fontColorButton, &QPushButton::clicked, this, &CaptionsDock::onFontColorClicked);
+	form->addRow(tr("Font color:"), m_fontColorButton);
 
 	layout->addLayout(form);
 
@@ -439,6 +498,11 @@ void CaptionsDock::loadSettings()
 	long long fontSize = config_get_int(config, "SonioxCaptions", "FontSize");
 	if (fontSize > 0)
 		m_fontSizeSpin->setValue(static_cast<int>(fontSize));
+
+	if (config_has_user_value(config, "SonioxCaptions", "FontColor")) {
+		m_fontColor = colorFromObsInt(config_get_int(config, "SonioxCaptions", "FontColor"));
+		m_fontColorButton->setStyleSheet(QStringLiteral("background-color: %1;").arg(m_fontColor.name()));
+	}
 }
 
 void CaptionsDock::saveSettings()
@@ -482,8 +546,48 @@ void CaptionsDock::onAppearanceSettingChanged()
 				   m_fontComboBox->currentFont().family().toUtf8().constData());
 		config_set_bool(config, "SonioxCaptions", "OutlineEnabled", m_outlineCheckBox->isChecked());
 		config_set_int(config, "SonioxCaptions", "FontSize", m_fontSizeSpin->value());
+		config_set_int(config, "SonioxCaptions", "FontColor", colorToObsInt(m_fontColor));
 		config_save(config);
 	}
+}
+
+void CaptionsDock::onFontColorClicked()
+{
+	QColor chosen = QColorDialog::getColor(m_fontColor, this, tr("Choose font color"));
+	if (!chosen.isValid())
+		return;
+
+	m_fontColor = chosen;
+	m_fontColorButton->setStyleSheet(QStringLiteral("background-color: %1;").arg(m_fontColor.name()));
+	onAppearanceSettingChanged();
+}
+
+void CaptionsDock::onUiLanguageChanged(int index)
+{
+	if (m_loadingUiLanguage)
+		return;
+
+	QString newCode = m_uiLanguageCombo->itemData(index).toString();
+	QString currentCode = Localization::savedLanguageCode();
+	if (newCode == currentCode)
+		return;
+
+	auto reply = QMessageBox::question(
+		this, tr("Change interface language?"),
+		tr("Switch the interface language to %1? OBS needs to restart for this to take effect.")
+			.arg(m_uiLanguageCombo->itemText(index)),
+		QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+
+	if (reply != QMessageBox::Yes) {
+		m_loadingUiLanguage = true;
+		setLanguageComboValue(m_uiLanguageCombo, currentCode);
+		m_loadingUiLanguage = false;
+		return;
+	}
+
+	Localization::saveLanguageCode(newCode);
+	QMessageBox::information(this, tr("Restart required"),
+				  tr("The interface language has been changed. Restart OBS for it to take effect."));
 }
 
 void CaptionsDock::onStartStopClicked()
@@ -767,6 +871,20 @@ void CaptionsDock::applyCaptionStyleSettings()
 	obs_data_set_int(fontSettings, "size", m_fontSizeSpin->value());
 	obs_data_set_obj(styleSettings, "font", fontSettings);
 	obs_data_release(fontSettings);
+
+	// text_gdiplus (Windows) and text_freetype2 (macOS/Linux) expose the
+	// same solid-text-color feature under different property keys and
+	// value counts — gdiplus takes one "color" key, freetype2 blends
+	// "color1"/"color2" as a gradient (setting both equal yields solid).
+	// The feature itself (any color, same visible result) is identical on
+	// both platforms; only the underlying key name differs.
+	long long fontColorInt = colorToObsInt(m_fontColor);
+#if defined(_WIN32)
+	obs_data_set_int(styleSettings, "color", fontColorInt);
+#else
+	obs_data_set_int(styleSettings, "color1", fontColorInt);
+	obs_data_set_int(styleSettings, "color2", fontColorInt);
+#endif
 
 	// Same setting applied identically on every platform, deliberately —
 	// text_ft2_source (macOS/Linux) and text_gdiplus (Windows) render this

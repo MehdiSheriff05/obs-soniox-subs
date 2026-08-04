@@ -128,6 +128,8 @@ target_sources(
     src/plugin-main.cpp
     src/CaptionsDock.cpp
     src/CaptionsDock.h
+    src/Localization.cpp
+    src/Localization.h
     src/AudioBridge.cpp
     src/AudioBridge.h
     src/SonioxClient.cpp

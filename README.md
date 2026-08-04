@@ -14,9 +14,10 @@ the everyday controls stay uncluttered:
   you need for day-to-day use.
 - **Stats** — elapsed session time, an estimated cost for the session, and
   a reconnect counter (a rising count usually means a shaky network).
-- **Settings** — Soniox API key, speech/caption language pickers, caption
-  font/size/outline controls, and a **Check for Updates** button. Set once
-  per setup, rarely touched during a live session.
+- **Settings** — interface language, Soniox API key, speech/caption language
+  pickers, caption font/size/color/outline controls, and a **Check for
+  Updates** button. Set once per setup, rarely touched during a live
+  session.
 
 Created by [Mehdi Sheriff](https://github.com/MehdiSheriff05).
 
@@ -56,6 +57,17 @@ needs manual end-to-end verification.
 - The font picker only takes effect if the chosen font is actually
   installed on the machine running OBS — e.g. the default, **Poppins**, is
   a Google font not preinstalled on macOS or Windows.
+- The caption text color is fully configurable (both text source
+  implementations support it identically); border/outline **color** is not
+  exposed as a picker, since `text_ft2_source` (macOS/Linux) has no
+  configurable outline color at all — only the on/off toggle above is
+  cross-platform.
+- The interface itself has an **English/French** picker (Settings tab, and
+  a one-time prompt on first launch). Changing it requires restarting OBS —
+  the plugin doesn't retranslate an already-open dock live. French strings
+  are a hand-maintained table in `src/Localization.cpp`, not Qt's usual
+  `.ts`/`.qm` Linguist files — OBS's bundled Qt6 build ships no
+  `lrelease`/`lupdate` tooling to generate those.
 - The speech-language dropdown includes an **Auto-detect** option (useful
   if a speaker switches languages mid-lecture, e.g. Urdu to Arabic) and a
   curated list of common languages, but you can type any Soniox-supported

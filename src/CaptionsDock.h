@@ -18,6 +18,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #pragma once
 
+#include <QColor>
 #include <QElapsedTimer>
 #include <QWidget>
 
@@ -66,6 +67,8 @@ private slots:
 	void onInstallerLaunched();
 	void onUpdateDownloadFailed(const QString &plainMessage, const QString &technicalDetail);
 	void onAppearanceSettingChanged();
+	void onFontColorClicked();
+	void onUiLanguageChanged(int index);
 
 private:
 	void buildUi();
@@ -110,6 +113,8 @@ private:
 	int m_reconnectCount = 0;
 
 	// Settings tab
+	QComboBox *m_uiLanguageCombo = nullptr;
+	bool m_loadingUiLanguage = false;
 	QLineEdit *m_apiKeyEdit = nullptr;
 	QPushButton *m_apiKeyChangeButton = nullptr;
 	QPushButton *m_checkUpdatesButton = nullptr;
@@ -119,6 +124,8 @@ private:
 	// Appearance tab
 	QFontComboBox *m_fontComboBox = nullptr;
 	QSpinBox *m_fontSizeSpin = nullptr;
+	QPushButton *m_fontColorButton = nullptr;
+	QColor m_fontColor = QColor(Qt::white);
 	QCheckBox *m_outlineCheckBox = nullptr;
 
 	QTimer *m_watchdogTimer = nullptr;
