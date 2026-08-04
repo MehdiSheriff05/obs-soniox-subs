@@ -23,6 +23,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "AudioBridge.h"
 #include "SonioxClient.h"
+#include "TelemetryReporter.h"
 #include "UpdateChecker.h"
 
 #include <obs-frontend-api.h>
@@ -81,6 +82,7 @@ private:
 	void setStatusText(const QString &plain, const QString &tooltip = QString());
 	void ensureCaptionTextSource();
 	void applyCaptionStyleSettings();
+	void reportSessionTelemetry();
 	void updateCaptionTextSource(const QString &text);
 	void clearCaptionText();
 	void updatePreviewCurrentLine(const QString &text);
@@ -127,6 +129,7 @@ private:
 	AudioBridge m_audioBridge;
 	SonioxClient m_sonioxClient;
 	UpdateChecker m_updateChecker;
+	TelemetryReporter m_telemetryReporter;
 
 	obs_source_t *m_captionTextSource = nullptr;
 	QString m_lastFinalizedText;
@@ -135,6 +138,13 @@ private:
 	bool m_running = false;
 	bool m_noAudioWarned = false;
 	bool m_apiKeyLocked = false;
+
+	// Captured at Start so the telemetry report at Stop reflects what the
+	// session actually used, regardless of what the (disabled while
+	// running) combo boxes show by then.
+	QString m_sessionSpeechLanguage;
+	QString m_sessionCaptionLanguage;
+	bool m_sessionAutoDetect = false;
 
 	static constexpr const char *kCaptionSourceName = "Soniox Live Captions";
 	// Soniox's published flat real-time rate (transcription + translation

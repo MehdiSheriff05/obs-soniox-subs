@@ -62,6 +62,29 @@ needs manual end-to-end verification.
   language code directly into either the speech- or caption-language box —
   they're editable, not locked to the presets.
 
+## Anonymous usage stats
+
+This plugin sends a small, anonymous usage event each time a captioning
+session ends, to [PostHog](https://posthog.com) (EU Cloud). This is on by
+default — there's no prompt — which is why it's disclosed here plainly:
+
+**What's sent:** a random ID generated once per install (not tied to your
+name, email, or Soniox account), session duration, the speech and caption
+languages used, whether auto-detect was on, plugin version, and OS
+platform. PostHog also derives an approximate country/city from the
+request's IP address for a usage map; the raw IP itself is discarded
+after that, not stored.
+
+**What's never sent:** audio, transcript/caption text, your Soniox API
+key, or anything else that identifies you or your audience personally.
+
+This exists so the maintainer can see rough adoption (how many
+installs, how much usage, which languages are actually used) — not to
+track individuals. If you'd rather not send this at all, the only way to
+disable it right now is to block outbound requests to
+`eu.i.posthog.com` at the network level (e.g. a firewall rule) — there's
+no in-app toggle yet.
+
 ## Installation
 
 Download the build for your platform from the
