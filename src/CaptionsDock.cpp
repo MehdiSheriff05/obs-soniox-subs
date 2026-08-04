@@ -197,16 +197,6 @@ QWidget *CaptionsDock::buildCaptionsTab()
 	auto *content = new QWidget();
 	auto *layout = new QVBoxLayout(content);
 
-	m_updateBannerLabel = new QLabel(content);
-	m_updateBannerLabel->setWordWrap(true);
-	m_updateBannerLabel->setVisible(false);
-	layout->addWidget(m_updateBannerLabel);
-
-	m_updateInstallButton = new QPushButton(tr("Install Update"), content);
-	m_updateInstallButton->setVisible(false);
-	connect(m_updateInstallButton, &QPushButton::clicked, this, &CaptionsDock::onInstallUpdateClicked);
-	layout->addWidget(m_updateInstallButton);
-
 	auto *form = new QFormLayout();
 	m_sourceCombo = new QComboBox(content);
 	m_refreshSourcesButton = new QPushButton(tr("Refresh"), content);
@@ -378,6 +368,11 @@ QWidget *CaptionsDock::buildSettingsTab()
 	m_updateStatusLabel = new QLabel(tr("Checking for updates..."), content);
 	m_updateStatusLabel->setWordWrap(true);
 	layout->addWidget(m_updateStatusLabel);
+
+	m_updateInstallButton = new QPushButton(tr("Install Update"), content);
+	m_updateInstallButton->setVisible(false);
+	connect(m_updateInstallButton, &QPushButton::clicked, this, &CaptionsDock::onInstallUpdateClicked);
+	layout->addWidget(m_updateInstallButton);
 
 	layout->addStretch(1);
 
@@ -724,12 +719,7 @@ void CaptionsDock::onCheckForUpdatesClicked()
 void CaptionsDock::onUpdateAvailable(const QString &newVersion)
 {
 	m_checkUpdatesButton->setEnabled(true);
-
-	QString message = tr("Update available: v%1").arg(newVersion);
-	m_updateStatusLabel->setText(message);
-
-	m_updateBannerLabel->setText(message);
-	m_updateBannerLabel->setVisible(true);
+	m_updateStatusLabel->setText(tr("Update available: v%1").arg(newVersion));
 	m_updateInstallButton->setVisible(true);
 	m_updateInstallButton->setEnabled(true);
 }
@@ -738,7 +728,6 @@ void CaptionsDock::onUpdateUpToDate()
 {
 	m_checkUpdatesButton->setEnabled(true);
 	m_updateStatusLabel->setText(tr("You're up to date (v%1)").arg(QString::fromUtf8(PLUGIN_VERSION)));
-	m_updateBannerLabel->setVisible(false);
 	m_updateInstallButton->setVisible(false);
 }
 
@@ -747,7 +736,6 @@ void CaptionsDock::onUpdateCheckFailed(const QString &plainMessage, const QStrin
 	m_checkUpdatesButton->setEnabled(true);
 	m_updateStatusLabel->setText(plainMessage);
 	m_updateStatusLabel->setToolTip(technicalDetail);
-	m_updateBannerLabel->setVisible(false);
 	m_updateInstallButton->setVisible(false);
 }
 
@@ -759,19 +747,19 @@ void CaptionsDock::onInstallUpdateClicked()
 
 void CaptionsDock::onUpdateDownloadStarted()
 {
-	m_updateBannerLabel->setText(tr("Downloading update..."));
+	m_updateStatusLabel->setText(tr("Downloading update..."));
 }
 
 void CaptionsDock::onInstallerLaunched()
 {
-	m_updateBannerLabel->setText(tr("Installer launched — finish the install, then restart OBS."));
+	m_updateStatusLabel->setText(tr("Installer launched — finish the install, then restart OBS."));
 	m_updateInstallButton->setVisible(false);
 }
 
 void CaptionsDock::onUpdateDownloadFailed(const QString &plainMessage, const QString &technicalDetail)
 {
-	m_updateBannerLabel->setText(plainMessage);
-	m_updateBannerLabel->setToolTip(technicalDetail);
+	m_updateStatusLabel->setText(plainMessage);
+	m_updateStatusLabel->setToolTip(technicalDetail);
 	m_updateInstallButton->setEnabled(true);
 }
 

@@ -102,8 +102,6 @@ private:
 	QLabel *m_statusLabel = nullptr;
 	QPlainTextEdit *m_captionPreview = nullptr;
 	QProgressBar *m_levelMeter = nullptr;
-	QLabel *m_updateBannerLabel = nullptr;
-	QPushButton *m_updateInstallButton = nullptr;
 
 	// Stats tab
 	QLabel *m_elapsedTimeLabel = nullptr;
@@ -118,6 +116,7 @@ private:
 	QPushButton *m_apiKeyChangeButton = nullptr;
 	QPushButton *m_checkUpdatesButton = nullptr;
 	QLabel *m_updateStatusLabel = nullptr;
+	QPushButton *m_updateInstallButton = nullptr;
 
 	// Appearance tab
 	QFontComboBox *m_fontComboBox = nullptr;
