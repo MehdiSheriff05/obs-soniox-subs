@@ -489,7 +489,6 @@ void CaptionsDock::onAppearanceSettingChanged()
 void CaptionsDock::onStartStopClicked()
 {
 	if (m_running) {
-		reportSessionTelemetry();
 		m_sonioxClient.stop();
 		m_audioBridge.stop();
 		m_watchdogTimer->stop();
@@ -531,10 +530,6 @@ void CaptionsDock::onStartStopClicked()
 	QStringList speechLanguageHints =
 		speechLanguage.isEmpty() ? QStringList{} : speechLanguage.split(QLatin1Char(','), Qt::SkipEmptyParts);
 	QString captionLanguage = languageComboValue(m_captionLanguageCombo);
-
-	m_sessionSpeechLanguage = speechLanguage;
-	m_sessionCaptionLanguage = captionLanguage;
-	m_sessionAutoDetect = speechLanguageHints.isEmpty();
 
 	m_sonioxClient.setApiKey(apiKey);
 	m_sonioxClient.setLanguages(speechLanguageHints, captionLanguage);
@@ -658,8 +653,6 @@ void CaptionsDock::onSonioxStatusChanged(SonioxClient::Status status)
 		break;
 	case SonioxClient::Status::AuthError:
 		setStatusText(tr("Invalid API key"), tr("Authentication failed. Check the Soniox API key."));
-		if (m_running)
-			reportSessionTelemetry();
 		m_watchdogTimer->stop();
 		m_statsTimer->stop();
 		m_audioBridge.stop();
@@ -667,7 +660,6 @@ void CaptionsDock::onSonioxStatusChanged(SonioxClient::Status status)
 		break;
 	case SonioxClient::Status::Disconnected:
 		if (m_running) {
-			reportSessionTelemetry();
 			m_watchdogTimer->stop();
 			m_statsTimer->stop();
 			m_audioBridge.stop();
@@ -761,13 +753,6 @@ void CaptionsDock::onUpdateDownloadFailed(const QString &plainMessage, const QSt
 	m_updateStatusLabel->setText(plainMessage);
 	m_updateStatusLabel->setToolTip(technicalDetail);
 	m_updateInstallButton->setEnabled(true);
-}
-
-void CaptionsDock::reportSessionTelemetry()
-{
-	qint64 durationSeconds = m_sessionElapsedTimer.elapsed() / 1000;
-	m_telemetryReporter.reportSessionEnded(durationSeconds, m_sessionSpeechLanguage, m_sessionCaptionLanguage,
-						m_sessionAutoDetect);
 }
 
 void CaptionsDock::applyCaptionStyleSettings()

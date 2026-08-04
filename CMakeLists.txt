@@ -134,8 +134,6 @@ target_sources(
     src/SonioxClient.h
     src/UpdateChecker.cpp
     src/UpdateChecker.h
-    src/TelemetryReporter.cpp
-    src/TelemetryReporter.h
 )
 
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE src)
