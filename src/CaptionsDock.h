@@ -148,4 +148,10 @@ private:
 	// This is an estimate for the volunteer's own awareness, not a real
 	// billing figure (actual billing is token-based, not pure wall-clock).
 	static constexpr double kEstimatedCostPerHour = 0.12;
+	// Fraction of the canvas width a caption is allowed to occupy before
+	// it gets wrapped onto a second line instead of running off-screen.
+	// Kept a bit under 1.0 as a safety margin, since Qt (used to measure
+	// the wrap point) and OBS's own text renderers don't measure glyph
+	// widths pixel-identically.
+	static constexpr double kCaptionMaxWidthFraction = 0.85;
 };
