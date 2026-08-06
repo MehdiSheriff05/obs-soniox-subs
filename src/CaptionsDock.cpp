@@ -27,7 +27,9 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QCheckBox>
 #include <QColorDialog>
 #include <QComboBox>
+#include <QFont>
 #include <QFontComboBox>
+#include <QFontMetrics>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -87,6 +89,42 @@ QColor colorFromObsInt(long long value)
 	auto v = static_cast<uint32_t>(value);
 	return QColor(static_cast<int>(v & 0xFF), static_cast<int>((v >> 8) & 0xFF),
 		      static_cast<int>((v >> 16) & 0xFF));
+}
+
+// Both text_freetype2 (macOS/Linux) and text_gdiplus (Windows) can
+// auto-wrap text, but under completely different, incompatible property
+// schemes — and gdiplus's wrap mode takes a *fixed* box height that
+// silently clips text if underestimated, rather than auto-growing like
+// freetype2's. Rather than juggle two inconsistent, clip-risky native
+// implementations, this measures the caption with the same font/size sent
+// to the OBS source and inserts a real line break itself when the text
+// would run past the canvas — both sources render an embedded "\n"
+// identically, so the existing auto-size + anchor-centering setup in
+// ensureCaptionTextSource() needs no changes at all.
+QString wrapCaptionText(const QString &text, const QFont &font, int maxWidthPx)
+{
+	QFontMetrics metrics(font);
+	if (maxWidthPx <= 0 || metrics.horizontalAdvance(text) <= maxWidthPx)
+		return text;
+
+	QStringList words = text.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+	if (words.size() < 2)
+		return text; // a single word wider than the box — nothing sensible to break on
+
+	QString firstLine = words.first();
+	int splitIndex = 1;
+	for (; splitIndex < words.size(); ++splitIndex) {
+		QString candidate = firstLine + QLatin1Char(' ') + words[splitIndex];
+		if (metrics.horizontalAdvance(candidate) > maxWidthPx)
+			break;
+		firstLine = candidate;
+	}
+
+	QString secondLine = words.mid(splitIndex).join(QLatin1Char(' '));
+	if (secondLine.isEmpty())
+		return text;
+
+	return firstLine + QLatin1Char('\n') + secondLine;
 }
 
 QString formatElapsed(qint64 elapsedMs)
@@ -967,8 +1005,16 @@ void CaptionsDock::updateCaptionTextSource(const QString &text)
 	if (!m_captionTextSource)
 		return;
 
+	obs_video_info ovi;
+	bool haveVideoInfo = obs_get_video_info(&ovi);
+	uint32_t canvasWidth = haveVideoInfo ? ovi.base_width : 1920;
+
+	QFont font(m_fontComboBox->currentFont().family(), m_fontSizeSpin->value());
+	int maxWidthPx = static_cast<int>(canvasWidth * kCaptionMaxWidthFraction);
+	QString wrapped = wrapCaptionText(text, font, maxWidthPx);
+
 	obs_data_t *settings = obs_data_create();
-	obs_data_set_string(settings, "text", text.toUtf8().constData());
+	obs_data_set_string(settings, "text", wrapped.toUtf8().constData());
 	obs_source_update(m_captionTextSource, settings);
 	obs_data_release(settings);
 }
